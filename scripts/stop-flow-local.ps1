@@ -19,7 +19,7 @@ if (-not $IsAdministrator) {
         "-Elevated"
     )
     Start-Process powershell.exe -Verb RunAs -ArgumentList $Arguments
-    Write-Host "Se solicitó permiso de administrador en otra ventana."
+    Write-Host "Se solicito permiso de administrador en otra ventana."
     exit 0
 }
 
@@ -46,7 +46,7 @@ function Stop-ProcessTree([int]$RootProcessId) {
 }
 
 if (-not (Test-Path -LiteralPath $StatePath)) {
-    Write-Host "No existe estado de una ejecución automatizada."
+    Write-Host "No existe estado de una ejecucion automatizada."
     exit 0
 }
 

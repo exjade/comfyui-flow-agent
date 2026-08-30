@@ -37,7 +37,7 @@ $NgrokLog = Join-Path $ScriptRoot "ngrok.log"
 $EnvPath = Join-Path $FlowAgentDir ".env"
 
 if (-not (Test-Path -LiteralPath $EnvPath)) {
-    throw "No se encontró $EnvPath"
+    throw "No se encontro $EnvPath"
 }
 
 function Get-DotEnvValue([string]$Name) {
@@ -65,7 +65,7 @@ function Set-DotEnvValue([string]$Name, [string]$Value) {
 
 $ProjectId = Get-DotEnvValue "DEFAULT_PROJECT"
 if ([string]::IsNullOrWhiteSpace($ProjectId)) {
-    throw "Añade DEFAULT_PROJECT=<id-del-proyecto> al .env de Flow Agent."
+    throw "Anade DEFAULT_PROJECT=<id-del-proyecto> al .env de Flow Agent."
 }
 
 if (Test-Path -LiteralPath $NgrokExe -PathType Leaf) {
@@ -73,7 +73,7 @@ if (Test-Path -LiteralPath $NgrokExe -PathType Leaf) {
 } else {
     $NgrokCommand = Get-Command ngrok -ErrorAction SilentlyContinue
     if (-not $NgrokCommand) {
-        throw "No se encontró ngrok.exe en '$NgrokExe' ni en PATH."
+        throw "No se encontro ngrok.exe en '$NgrokExe' ni en PATH."
     }
     $NgrokExecutable = $NgrokCommand.Source
 }
@@ -111,7 +111,7 @@ while (-not $PublicUrl -and (Get-Date) -lt $Deadline) {
 }
 
 if ([string]::IsNullOrWhiteSpace($PublicUrl)) {
-    throw "ngrok no entregó un túnel HTTPS. Revisa $NgrokLog"
+    throw "ngrok no entrego un tunel HTTPS. Revisa $NgrokLog"
 }
 $PublicUrl = $PublicUrl.TrimEnd("/")
 
@@ -123,13 +123,13 @@ $Health = $null
 try { $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3 } catch {}
 
 if ($Health -and $PreviousPublicUrl -eq $PublicUrl) {
-    Write-Host "Flow Agent ya estaba ejecutándose con este túnel."
+    Write-Host "Flow Agent ya estaba ejecutandose con este tunel."
 } else {
     $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($Listener) {
         $Owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($Listener.OwningProcess)"
         if ($Owner.CommandLine -notmatch "main\.py") {
-            throw "El puerto $Port está ocupado por otro programa: $($Owner.CommandLine)"
+            throw "El puerto $Port esta ocupado por otro programa: $($Owner.CommandLine)"
         }
         Stop-Process -Id $Listener.OwningProcess -Force
         Start-Sleep -Seconds 1
@@ -153,7 +153,7 @@ do {
 } while (-not $Health -and (Get-Date) -lt $Deadline)
 
 if (-not $Health) {
-    throw "Flow Agent no respondió. Revisa $StderrLog"
+    throw "Flow Agent no respondio. Revisa $StderrLog"
 }
 
 $ProjectUrl = "https://labs.google/fx/es-419/tools/flow/project/$ProjectId"

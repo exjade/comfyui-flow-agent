@@ -37,22 +37,22 @@ function Install-WingetPackage(
 ) {
     $Existing = Find-CommandPath $CommandName
     if ($Existing) {
-        Write-Host "$DisplayName ya está instalado: $Existing" -ForegroundColor Green
+        Write-Host "$DisplayName ya esta instalado: $Existing" -ForegroundColor Green
         return $Existing
     }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        throw "Windows Package Manager (winget) no está disponible. Actualiza App Installer desde Microsoft Store."
+        throw "Windows Package Manager (winget) no esta disponible. Actualiza App Installer desde Microsoft Store."
     }
 
     Write-Host "Instalando $DisplayName..." -ForegroundColor Yellow
     & winget @WingetArguments --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
-        throw "winget no pudo instalar $DisplayName (código $LASTEXITCODE)."
+        throw "winget no pudo instalar $DisplayName (codigo $LASTEXITCODE)."
     }
     Refresh-Path
     $Installed = Find-CommandPath $CommandName
     if (-not $Installed) {
-        throw "$DisplayName se instaló, pero '$CommandName' aún no está disponible. Reinicia Windows y vuelve a ejecutar INSTALAR-FLOW.cmd."
+        throw "$DisplayName se instalo, pero '$CommandName' aun no esta disponible. Reinicia Windows y vuelve a ejecutar INSTALAR-FLOW.cmd."
     }
     return $Installed
 }
@@ -122,8 +122,8 @@ function Find-ChromiumBrowser {
         Select-Object -First 1
 }
 
-Write-Host "INSTALADOR INICIAL — FLOW AGENT + NGROK" -ForegroundColor Magenta
-Write-Host "Instalación local: $InstallRoot"
+Write-Host "INSTALADOR INICIAL - FLOW AGENT + NGROK" -ForegroundColor Magenta
+Write-Host "Instalacion local: $InstallRoot"
 
 Write-Step "1/7 Instalando herramientas"
 $GitExe = Install-WingetPackage "Git" @(
@@ -143,7 +143,7 @@ if (-not $BrowserExe) {
     Refresh-Path
     $BrowserExe = Find-ChromiumBrowser
     if (-not $BrowserExe) {
-        throw "Google Chrome se instaló, pero aún no está disponible. Reinicia Windows y vuelve a ejecutar INSTALAR-FLOW.cmd."
+        throw "Google Chrome se instalo, pero aun no esta disponible. Reinicia Windows y vuelve a ejecutar INSTALAR-FLOW.cmd."
     }
 }
 
@@ -153,7 +153,7 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
     & $GitExe -C $FlowRepoDir pull --ff-only
     if ($LASTEXITCODE -ne 0) { throw "No se pudo actualizar Flow Agent." }
 } elseif (Test-Path -LiteralPath $FlowRepoDir) {
-    throw "La carpeta '$FlowRepoDir' existe, pero no es un repositorio Git. Muévela o elige otro InstallRoot."
+    throw "La carpeta '$FlowRepoDir' existe, pero no es un repositorio Git. Muevela o elige otro InstallRoot."
 } else {
     & $GitExe clone $FlowRepository $FlowRepoDir
     if ($LASTEXITCODE -ne 0) { throw "No se pudo clonar Flow Agent." }
@@ -170,14 +170,14 @@ try {
 
 Write-Step "4/7 Configurando ngrok"
 Start-Process "https://dashboard.ngrok.com/get-started/your-authtoken"
-$SecureToken = Read-Host "Pega tu authtoken de ngrok (se ocultará)" -AsSecureString
+$SecureToken = Read-Host "Pega tu authtoken de ngrok (se ocultara)" -AsSecureString
 $NgrokToken = Convert-SecureStringToText $SecureToken
-if ([string]::IsNullOrWhiteSpace($NgrokToken)) { throw "El authtoken de ngrok está vacío." }
+if ([string]::IsNullOrWhiteSpace($NgrokToken)) { throw "El authtoken de ngrok esta vacio." }
 & $NgrokExe config add-authtoken $NgrokToken
 $NgrokToken = $null
-if ($LASTEXITCODE -ne 0) { throw "ngrok rechazó el authtoken." }
+if ($LASTEXITCODE -ne 0) { throw "ngrok rechazo el authtoken." }
 
-Write-Step "5/7 Instalando la extensión del navegador"
+Write-Step "5/7 Instalando la extension del navegador"
 $ExtensionDir | Set-Clipboard
 Start-Process explorer.exe -ArgumentList @("/select,`"$ExtensionDir\manifest.json`"")
 if ($BrowserExe) {
@@ -185,11 +185,11 @@ if ($BrowserExe) {
 } else {
     Start-Process "https://support.google.com/chrome_webstore/answer/2664769"
 }
-Write-Host "En la página de extensiones:" -ForegroundColor Yellow
+Write-Host "En la pagina de extensiones:" -ForegroundColor Yellow
 Write-Host "  1. Activa Modo de desarrollador."
 Write-Host "  2. Pulsa Cargar descomprimida."
 Write-Host "  3. Selecciona la carpeta copiada al portapapeles: $ExtensionDir"
-Read-Host "Pulsa Enter cuando la extensión Flow Agent esté instalada"
+Read-Host "Pulsa Enter cuando la extension Flow Agent este instalada"
 
 Write-Step "6/7 Seleccionando un proyecto de Google Flow"
 $FlowHome = "https://labs.google/fx/es-419/tools/flow"
@@ -198,15 +198,15 @@ if ($BrowserExe) {
 } else {
     Start-Process $FlowHome
 }
-Write-Host "Inicia sesión, crea o abre un proyecto y copia su URL completa." -ForegroundColor Yellow
+Write-Host "Inicia sesion, crea o abre un proyecto y copia su URL completa." -ForegroundColor Yellow
 $ProjectId = $null
 while (-not $ProjectId) {
     $ProjectInput = Read-Host "Pega la URL del proyecto de Google Flow"
     $ProjectId = Get-ProjectId $ProjectInput
-    if (-not $ProjectId) { Write-Host "No pude reconocer el ID del proyecto. Inténtalo otra vez." -ForegroundColor Red }
+    if (-not $ProjectId) { Write-Host "No pude reconocer el ID del proyecto. Intentalo otra vez." -ForegroundColor Red }
 }
 
-Write-Step "7/7 Creando configuración segura"
+Write-Step "7/7 Creando configuracion segura"
 $ExistingApiKey = Get-DotEnvValue "SERVER_API_KEY"
 $ApiKey = if ([string]::IsNullOrWhiteSpace($ExistingApiKey)) {
     New-ApiKey
@@ -247,10 +247,10 @@ $ApiKey | Set-Clipboard
 Write-Host ""
 Write-Host "CLAVE COPIADA AL PORTAPAPELES" -ForegroundColor Green
 Write-Host "En RunPod crea el secreto 'flow_agent_api_key' y pega ahora la clave."
-Write-Host "Después asigna: FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}"
-Read-Host "Pulsa Enter solamente después de guardar el secreto en RunPod"
+Write-Host "Despues asigna: FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}"
+Read-Host "Pulsa Enter solamente despues de guardar el secreto en RunPod"
 
 & (Join-Path $ScriptRoot "start-flow-local.ps1")
 Write-Host ""
-Write-Host "INSTALACIÓN TERMINADA" -ForegroundColor Green
-Write-Host "La URL pública quedó copiada. Guárdala como FLOW_AGENT_BASE_URL en RunPod."
+Write-Host "INSTALACION TERMINADA" -ForegroundColor Green
+Write-Host "La URL publica quedo copiada. Guardala como FLOW_AGENT_BASE_URL en RunPod."
