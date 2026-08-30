@@ -143,14 +143,42 @@ def _download_video_result(
                 "fullpath": destination,
             }
         )
+    try:
+        from comfy_api.latest import InputImpl
+
+        native_video = InputImpl.VideoFromFile(paths[0])
+    except (ImportError, AttributeError) as exc:
+        raise FlowAgentError(
+            "This ComfyUI build does not provide the native VIDEO API required by "
+            "comfyui-flow-agent. Update ComfyUI and restart it."
+        ) from exc
+
     result = (
+        native_video,
         (True, paths),
         json.dumps(paths, ensure_ascii=False),
         json.dumps([item.get("media_id") for item in items], ensure_ascii=False),
         json.dumps([item.get("url") for item in items], ensure_ascii=False),
         json.dumps(payload, ensure_ascii=False),
     )
-    return {"ui": {"gifs": previews}, "result": result}
+    # Native ComfyUI PreviewVideo uses the regular saved-image descriptors plus
+    # the animated flag. Keep `gifs` too for VideoHelperSuite compatibility.
+    saved_results = [
+        {
+            "filename": preview["filename"],
+            "subfolder": preview["subfolder"],
+            "type": preview["type"],
+        }
+        for preview in previews
+    ]
+    return {
+        "ui": {
+            "images": saved_results,
+            "animated": (True,),
+            "gifs": previews,
+        },
+        "result": result,
+    }
 
 
 class FlowNanoBanana:
@@ -265,8 +293,8 @@ class FlowOmniFlashVideo:
             },
         }
 
-    RETURN_TYPES = ("VHS_FILENAMES", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("vhs_filenames", "video_paths_json", "media_ids_json", "source_urls_json", "job_json")
+    RETURN_TYPES = ("VIDEO", "VHS_FILENAMES", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("video", "vhs_filenames", "video_paths_json", "media_ids_json", "source_urls_json", "job_json")
     FUNCTION = "generate"
     CATEGORY = "Flow Agent"
     OUTPUT_NODE = True
@@ -386,8 +414,8 @@ class FlowVideoUpsample:
             }
         }
 
-    RETURN_TYPES = ("VHS_FILENAMES", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("vhs_filenames", "video_paths_json", "media_ids_json", "source_urls_json", "job_json")
+    RETURN_TYPES = ("VIDEO", "VHS_FILENAMES", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("video", "vhs_filenames", "video_paths_json", "media_ids_json", "source_urls_json", "job_json")
     FUNCTION = "upsample"
     CATEGORY = "Flow Agent"
     OUTPUT_NODE = True

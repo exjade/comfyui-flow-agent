@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 
 import pytest
 
@@ -61,3 +63,44 @@ def test_node_uploads_reference_generates_and_batches(monkeypatch):
     assert FakeClient.generation_args["ref_media_ids"] == ["ref-1"]
     assert json.loads(media_ids) == ["generated-1", "generated-2"]
     assert len(json.loads(urls)) == 2
+
+
+def test_video_result_exposes_native_video_and_inline_preview(monkeypatch, tmp_path):
+    class FakeVideoClient:
+        def download_media_to_file(self, _item, destination, timeout_seconds):
+            del timeout_seconds
+            with open(destination, "wb") as handle:
+                handle.write(b"fake mp4")
+
+    latest = types.ModuleType("comfy_api.latest")
+    latest.InputImpl = types.SimpleNamespace(
+        VideoFromFile=lambda path: {"native_video_path": path}
+    )
+    comfy_api = types.ModuleType("comfy_api")
+    comfy_api.latest = latest
+    monkeypatch.setitem(sys.modules, "comfy_api", comfy_api)
+    monkeypatch.setitem(sys.modules, "comfy_api.latest", latest)
+    monkeypatch.setattr(nodes, "_comfy_output_directory", lambda: str(tmp_path))
+
+    response = nodes._download_video_result(
+        FakeVideoClient(),
+        {
+            "status": "succeeded",
+            "data": [
+                {
+                    "url": "https://unit.invalid/video.mp4",
+                    "media_id": "video-1",
+                    "resolution": "720p",
+                }
+            ],
+        },
+        requested_resolution="720p",
+        count=1,
+        started=nodes.time.monotonic(),
+        timeout_seconds=60,
+    )
+
+    assert response["result"][0]["native_video_path"].endswith(".mp4")
+    assert response["result"][1][0] is True
+    assert response["ui"]["animated"] == (True,)
+    assert response["ui"]["images"][0]["subfolder"] == "flow_agent"
