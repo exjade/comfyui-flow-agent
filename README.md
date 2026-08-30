@@ -93,6 +93,10 @@ PY
 
 Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline preview, native `VIDEO`, Video Helper Suite-compatible `VHS_FILENAMES`, paths, media IDs, source URLs, and job JSON. `source_video_path` must point to a RunPod file, not a Windows path.
 
+The selected video mode determines which image sockets are used. The node rejects connected inputs that the selected mode would ignore, before contacting the paid generation endpoint. For identity work, connect individual character shots (or the `images` batch from Character Creator) to `reference_images` and select `ingredients / reference images`. A flattened contact sheet is treated as one composite picture, not as six independent character references. `start image to video` animates one specific first frame and should receive a single shot.
+
+Flow generates one native 720p asset per requested clip. Selecting 1080p or 4K runs a second upsample pass and therefore creates a second asset in the Google Flow project, but the ComfyUI node returns and previews only the requested final resolution. In the currently verified Flow Agent contract, the 1080p upsample is free; 4K may consume additional credits depending on the account.
+
 ## Character datasets
 
 `Flow / Custom Character Creator` reproduces the community Character Persona workflow with 22 stable shots: eight face angles, six expressions, and eight body poses. It accepts one identity image plus optional `top_reference`, `bottom_reference`, `accessories_reference`, and `shoes_reference` inputs. Each wardrobe input may be a small IMAGE batch, with a hard combined limit of 10 references. The node sends Flow's real ordered `ref_media_ids` list and adds explicit role assignments to each shot prompt; the upstream API has no separate top/bottom/shoes fields.

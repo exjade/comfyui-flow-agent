@@ -88,7 +88,13 @@ function createPreview(node) {
 }
 
 function showPreview(node, message) {
-    const items = message?.images || message?.gifs;
+    // Current ComfyUI versions render `images` with `animated` natively. Do not
+    // add a second DOM video for the same file. Keep this extension only as a
+    // compatibility fallback for responses that expose legacy VHS `gifs`.
+    if (Array.isArray(message?.images) && message.images.some((item) => item?.filename)) {
+        return;
+    }
+    const items = message?.gifs;
     const item = Array.isArray(items) ? items[0] : null;
     if (!item?.filename) {
         return;

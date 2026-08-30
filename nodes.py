@@ -51,6 +51,42 @@ def _remaining(started: float, timeout_seconds: float, action: str) -> float:
     return remaining
 
 
+def _validate_video_mode_connections(
+    mode: str,
+    *,
+    start_image=None,
+    end_image=None,
+    reference_images=None,
+    extra_reference_images=(),
+) -> None:
+    """Reject connected image inputs that the selected paid video mode would ignore."""
+
+    has_start = start_image is not None
+    has_end = end_image is not None
+    has_references = reference_images is not None or any(
+        image is not None for image in extra_reference_images
+    )
+
+    if has_start and mode not in {"start image to video", "first + last frame"}:
+        raise FlowAgentError(
+            f"start_image is connected, but mode {mode!r} would ignore it. "
+            "Select 'start image to video' or 'first + last frame' before generating."
+        )
+    if has_end and mode != "first + last frame":
+        raise FlowAgentError(
+            f"end_image is connected, but mode {mode!r} would ignore it. "
+            "Select 'first + last frame' before generating."
+        )
+    if has_references and mode not in {
+        "ingredients / reference images",
+        "edit source video",
+    }:
+        raise FlowAgentError(
+            f"Reference images are connected, but mode {mode!r} would ignore them. "
+            "Select 'ingredients / reference images' before generating."
+        )
+
+
 def _upload_image_batch(client, image, *, started, timeout_seconds, max_images=10):
     if image is None:
         return []
@@ -988,6 +1024,17 @@ class FlowOmniFlashVideo:
         if mode == "edit source video" and count != 1:
             raise FlowAgentError("Flow Agent video editing accepts one output per request; set count to 1.")
 
+        extra_reference_images = tuple(
+            kwargs.get(f"reference_image_{index}") for index in range(2, 11)
+        )
+        _validate_video_mode_connections(
+            mode,
+            start_image=start_image,
+            end_image=end_image,
+            reference_images=reference_images,
+            extra_reference_images=extra_reference_images,
+        )
+
         client = FlowAgentClient.from_env()
         started = time.monotonic()
         client.assert_ready(timeout_seconds=min(15.0, float(timeout_seconds)))
@@ -1011,7 +1058,7 @@ class FlowOmniFlashVideo:
             reference_ids = _upload_image_sources(
                 client,
                 [reference_images]
-                + [kwargs.get(f"reference_image_{index}") for index in range(2, 11)],
+                + list(extra_reference_images),
                 started=started,
                 timeout_seconds=timeout_seconds,
             )

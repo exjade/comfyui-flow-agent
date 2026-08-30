@@ -24,3 +24,11 @@ def test_character_creator_does_not_use_removed_single_reference_variable():
 
     assert "reference_media_id" not in loaded_names
     assert "reference_ids" in loaded_names
+
+
+def test_video_preview_avoids_duplicate_native_preview():
+    script_path = Path(__file__).resolve().parents[1] / "web" / "flow_video_preview.js"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert "Array.isArray(message?.images)" in source
+    assert "const items = message?.gifs;" in source

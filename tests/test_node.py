@@ -108,6 +108,52 @@ def test_video_result_exposes_native_video_and_inline_preview(monkeypatch, tmp_p
     assert response["ui"]["images"][0]["subfolder"] == "flow_agent"
 
 
+def test_video_mode_rejects_reference_images_before_paid_request(monkeypatch):
+    class UnexpectedClient:
+        @classmethod
+        def from_env(cls):
+            raise AssertionError("Client must not be created for an invalid mode/input combination")
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", UnexpectedClient)
+
+    with pytest.raises(nodes.FlowAgentError, match="would ignore them"):
+        nodes.FlowOmniFlashVideo().generate(
+            prompt="Slow camera move",
+            mode="text to video",
+            aspect_ratio="landscape",
+            duration=8,
+            count=1,
+            resolution="720p",
+            seed=43,
+            video_model_override="",
+            timeout_seconds=1200,
+            reference_images=torch.zeros((1, 4, 4, 3)),
+        )
+
+
+def test_video_mode_rejects_start_image_before_paid_request(monkeypatch):
+    class UnexpectedClient:
+        @classmethod
+        def from_env(cls):
+            raise AssertionError("Client must not be created for an invalid mode/input combination")
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", UnexpectedClient)
+
+    with pytest.raises(nodes.FlowAgentError, match="would ignore it"):
+        nodes.FlowOmniFlashVideo().generate(
+            prompt="Slow camera move",
+            mode="text to video",
+            aspect_ratio="landscape",
+            duration=8,
+            count=1,
+            resolution="720p",
+            seed=43,
+            video_model_override="",
+            timeout_seconds=1200,
+            start_image=torch.zeros((1, 4, 4, 3)),
+        )
+
+
 def _png_bytes(value):
     buffer = io.BytesIO()
     Image.new("RGB", (4, 4), (value, value, value)).save(buffer, format="PNG")
