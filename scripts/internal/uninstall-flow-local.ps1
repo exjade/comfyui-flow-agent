@@ -5,8 +5,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ConfigPath = Join-Path $ScriptRoot "flow-local.config.json"
-$StatePath = Join-Path $ScriptRoot ".flow-local-state.json"
+$LauncherRoot = Split-Path -Parent $ScriptRoot
+$DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
+$ConfigPath = Join-Path $DataRoot "flow-local.config.json"
+$StatePath = Join-Path $DataRoot "flow-local-state.json"
+$LegacyConfigPath = Join-Path $LauncherRoot "flow-local.config.json"
+$LegacyStatePath = Join-Path $LauncherRoot ".flow-local-state.json"
+if (-not (Test-Path -LiteralPath $ConfigPath) -and (Test-Path -LiteralPath $LegacyConfigPath)) { $ConfigPath = $LegacyConfigPath }
+if (-not (Test-Path -LiteralPath $StatePath) -and (Test-Path -LiteralPath $LegacyStatePath)) { $StatePath = $LegacyStatePath }
 $ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "START FLOW AGENT.lnk"
 
 function Get-FullPath([string]$Path) {
@@ -138,7 +144,7 @@ if (Test-Path -LiteralPath $ShortcutPath -PathType Leaf) {
     try {
         $Shell = New-Object -ComObject WScript.Shell
         $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-        $ExpectedTarget = Get-FullPath (Join-Path $ScriptRoot "START-FLOW.cmd")
+        $ExpectedTarget = Get-FullPath (Join-Path $LauncherRoot "04-START-FLOW.cmd")
         if ((Get-FullPath $Shortcut.TargetPath) -eq $ExpectedTarget) {
             Remove-Item -LiteralPath $ShortcutPath -Force
         } else {
@@ -152,12 +158,20 @@ if (Test-Path -LiteralPath $ShortcutPath -PathType Leaf) {
 $LocalArtifacts = @(
     $StatePath,
     $ConfigPath,
-    (Join-Path $ScriptRoot "flow-agent.stdout.log"),
-    (Join-Path $ScriptRoot "flow-agent.stderr.log"),
-    (Join-Path $ScriptRoot "ngrok.log")
+    (Join-Path $DataRoot "flow-agent.stdout.log"),
+    (Join-Path $DataRoot "flow-agent.stderr.log"),
+    (Join-Path $DataRoot "ngrok.log"),
+    $LegacyConfigPath,
+    $LegacyStatePath,
+    (Join-Path $LauncherRoot "flow-agent.stdout.log"),
+    (Join-Path $LauncherRoot "flow-agent.stderr.log"),
+    (Join-Path $LauncherRoot "ngrok.log")
 )
 foreach ($Artifact in $LocalArtifacts) {
     Remove-Item -LiteralPath $Artifact -Force -ErrorAction SilentlyContinue
+}
+if ((Test-Path -LiteralPath $DataRoot) -and -not (Get-ChildItem -LiteralPath $DataRoot -Force | Select-Object -First 1)) {
+    Remove-Item -LiteralPath $DataRoot -Force
 }
 
 Write-Host ""

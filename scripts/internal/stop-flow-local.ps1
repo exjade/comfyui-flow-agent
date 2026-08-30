@@ -24,7 +24,12 @@ if (-not $IsAdministrator) {
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$StatePath = Join-Path $ScriptRoot ".flow-local-state.json"
+$DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
+$StatePath = Join-Path $DataRoot "flow-local-state.json"
+$LegacyStatePath = Join-Path (Split-Path -Parent $ScriptRoot) ".flow-local-state.json"
+if (-not (Test-Path -LiteralPath $StatePath) -and (Test-Path -LiteralPath $LegacyStatePath)) {
+    $StatePath = $LegacyStatePath
+}
 
 function Stop-ProcessTree([int]$RootProcessId) {
     $Children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$RootProcessId" `

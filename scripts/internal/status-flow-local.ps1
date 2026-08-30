@@ -1,4 +1,4 @@
-param([int]$Port = 8001)
+param([int]$Port = 8001) # Read-only service status.
 
 $ErrorActionPreference = "Stop"
 try {

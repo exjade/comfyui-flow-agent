@@ -6,7 +6,25 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ConfigPath = Join-Path $ScriptRoot "flow-local.config.json"
+$DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
+$ConfigPath = Join-Path $DataRoot "flow-local.config.json"
+$LegacyRoot = Split-Path -Parent $ScriptRoot
+$LegacyConfigPath = Join-Path $LegacyRoot "flow-local.config.json"
+New-Item -ItemType Directory -Path $DataRoot -Force | Out-Null
+foreach ($LegacyName in @(
+    "flow-local.config.json",
+    ".flow-local-state.json",
+    "flow-agent.stdout.log",
+    "flow-agent.stderr.log",
+    "ngrok.log"
+)) {
+    $LegacyPath = Join-Path $LegacyRoot $LegacyName
+    $NewName = if ($LegacyName -eq ".flow-local-state.json") { "flow-local-state.json" } else { $LegacyName }
+    $NewPath = Join-Path $DataRoot $NewName
+    if ((Test-Path -LiteralPath $LegacyPath) -and -not (Test-Path -LiteralPath $NewPath)) {
+        Move-Item -LiteralPath $LegacyPath -Destination $NewPath -ErrorAction SilentlyContinue
+    }
+}
 
 $LocalConfig = $null
 if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
@@ -20,7 +38,7 @@ if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
         if (Test-Path -LiteralPath (Join-Path $DefaultFlowAgentDir ".env") -PathType Leaf) {
             $FlowAgentDir = $DefaultFlowAgentDir
         } else {
-            throw "Flow Agent was not found. Run scripts\INSTALL-FLOW.cmd or provide -FlowAgentDir."
+            throw "Flow Agent was not found. Run scripts\01-INSTALL-FLOW.cmd or provide -FlowAgentDir."
         }
     }
 }
@@ -30,7 +48,7 @@ if ([string]::IsNullOrWhiteSpace($NgrokExe)) {
     } else {
         $NgrokCommand = Get-Command ngrok -ErrorAction SilentlyContinue
         if (-not $NgrokCommand) {
-            throw "ngrok was not found. Run scripts\INSTALL-FLOW.cmd or provide -NgrokExe."
+            throw "ngrok was not found. Run scripts\01-INSTALL-FLOW.cmd or provide -NgrokExe."
         }
         $NgrokExe = $NgrokCommand.Source
     }
@@ -39,10 +57,10 @@ if ($Port -le 0) {
     $Port = if ($LocalConfig -and $LocalConfig.port) { [int]$LocalConfig.port } else { 8001 }
 }
 
-$StatePath = Join-Path $ScriptRoot ".flow-local-state.json"
-$StdoutLog = Join-Path $ScriptRoot "flow-agent.stdout.log"
-$StderrLog = Join-Path $ScriptRoot "flow-agent.stderr.log"
-$NgrokLog = Join-Path $ScriptRoot "ngrok.log"
+$StatePath = Join-Path $DataRoot "flow-local-state.json"
+$StdoutLog = Join-Path $DataRoot "flow-agent.stdout.log"
+$StderrLog = Join-Path $DataRoot "flow-agent.stderr.log"
+$NgrokLog = Join-Path $DataRoot "ngrok.log"
 $EnvPath = Join-Path $FlowAgentDir ".env"
 
 if (-not (Test-Path -LiteralPath $EnvPath)) {
@@ -174,7 +192,7 @@ if (-not $Health) {
     throw "Flow Agent did not respond. Check $StderrLog"
 }
 if (-not $IsReady) {
-    throw "Flow Agent started, but the Chrome extension is not ready. Open the configured Flow project, confirm that the extension is ON, refresh its token, and run START-FLOW.cmd again."
+    throw "Flow Agent started, but the Chrome extension is not ready. Open the configured Flow project, confirm that the extension is ON, refresh its token, and run 04-START-FLOW.cmd again."
 }
 
 $PublicUrl | Set-Clipboard

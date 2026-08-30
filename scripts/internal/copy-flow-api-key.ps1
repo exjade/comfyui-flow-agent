@@ -2,7 +2,12 @@ param([string]$FlowAgentDir = "")
 
 $ErrorActionPreference = "Stop"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ConfigPath = Join-Path $ScriptRoot "flow-local.config.json"
+$DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
+$ConfigPath = Join-Path $DataRoot "flow-local.config.json"
+$LegacyConfigPath = Join-Path (Split-Path -Parent $ScriptRoot) "flow-local.config.json"
+if (-not (Test-Path -LiteralPath $ConfigPath) -and (Test-Path -LiteralPath $LegacyConfigPath)) {
+    $ConfigPath = $LegacyConfigPath
+}
 
 if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
     if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
@@ -17,7 +22,7 @@ if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
     }
 }
 if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
-    throw "Flow Agent was not found. Run INSTALL-FLOW.cmd or provide -FlowAgentDir."
+    throw "Flow Agent was not found. Run 01-INSTALL-FLOW.cmd or provide -FlowAgentDir."
 }
 
 $EnvPath = Join-Path $FlowAgentDir ".env"

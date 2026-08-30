@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# This internal script is designed to be piped from the public bootstrap URL.
 set -euo pipefail
 
 COMFY_DIR="${1:-/workspace/ComfyUI}"

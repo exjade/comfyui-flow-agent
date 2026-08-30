@@ -6,7 +6,9 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ConfigPath = Join-Path $ScriptRoot "flow-local.config.json"
+$LauncherRoot = Split-Path -Parent $ScriptRoot
+$DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
+$ConfigPath = Join-Path $DataRoot "flow-local.config.json"
 $FlowRepository = "https://github.com/kodelyx/flow-agent.git"
 $FlowRepoDir = Join-Path $InstallRoot "flow-agent"
 $FlowAgentDir = Join-Path $FlowRepoDir "flow-agent"
@@ -54,7 +56,7 @@ function Install-WingetPackage(
     Refresh-Path
     $Installed = Find-CommandPath $CommandName
     if (-not $Installed) {
-        throw "$DisplayName was installed, but '$CommandName' is not available yet. Restart Windows and run INSTALL-FLOW.cmd again."
+        throw "$DisplayName was installed, but '$CommandName' is not available yet. Restart Windows and run 01-INSTALL-FLOW.cmd again."
     }
     return $Installed
 }
@@ -145,7 +147,7 @@ if (-not $BrowserExe) {
     Refresh-Path
     $BrowserExe = Find-ChromiumBrowser
     if (-not $BrowserExe) {
-        throw "Google Chrome was installed, but is not available yet. Restart Windows and run INSTALL-FLOW.cmd again."
+        throw "Google Chrome was installed, but is not available yet. Restart Windows and run 01-INSTALL-FLOW.cmd again."
     }
 }
 
@@ -210,6 +212,7 @@ while (-not $ProjectId) {
 }
 
 Write-Step "7/7 Creating secure configuration"
+New-Item -ItemType Directory -Path $DataRoot -Force | Out-Null
 $ExistingApiKey = Get-DotEnvValue "SERVER_API_KEY"
 $ApiKey = if ([string]::IsNullOrWhiteSpace($ExistingApiKey)) {
     New-ApiKey
@@ -276,37 +279,14 @@ $Desktop = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $Desktop "START FLOW AGENT.lnk"
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = Join-Path $ScriptRoot "START-FLOW.cmd"
-$Shortcut.WorkingDirectory = $ScriptRoot
+$Shortcut.TargetPath = Join-Path $LauncherRoot "04-START-FLOW.cmd"
+$Shortcut.WorkingDirectory = $LauncherRoot
 $Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,137"
 $Shortcut.Save()
 
-$ApiKey | Set-Clipboard
 Write-Host ""
-Write-Host "RUNPOD STEP 1 - SAVE THE PRIVATE KEY" -ForegroundColor Green
-Write-Host "The generated API key is currently in your clipboard."
-Write-Host "In RunPod Secrets, create:"
-Write-Host "  Secret name:  flow_agent_api_key"
-Write-Host "  Secret value: paste the actual key from the clipboard"
-Write-Host "Do not use the RUNPOD_SECRET expression as the secret value."
-Read-Host "Press Enter only after the secret is saved"
-
-Write-Host ""
-Write-Host "RUNPOD STEP 2 - ADD THE SECRET REFERENCE" -ForegroundColor Cyan
-Write-Host "In the Pod environment variables, add:"
-Write-Host "  Key:   FLOW_AGENT_API_KEY"
-Write-Host '  Value: {{ RUNPOD_SECRET_flow_agent_api_key }}'
-Write-Host "RunPod replaces that expression with the private value from Step 1."
-
-Write-Host ""
-Write-Host "RUNPOD STEP 3 - INSTALL THE COMFYUI NODE" -ForegroundColor Cyan
-Write-Host "Open the RunPod terminal and run:"
-Write-Host "curl -fsSL https://raw.githubusercontent.com/exjade/comfyui-flow-agent/main/scripts/INSTALL-RUNPOD.sh | bash" -ForegroundColor White
-Read-Host "Press Enter after that RunPod command finishes"
-
-& (Join-Path $ScriptRoot "start-flow-local.ps1")
-Write-Host ""
-Write-Host "INSTALLATION COMPLETE" -ForegroundColor Green
-Write-Host "RUNPOD STEP 4 - SAVE THE PUBLIC URL" -ForegroundColor Cyan
-Write-Host "The public URL is in your clipboard and was displayed above."
-Write-Host "Save it as FLOW_AGENT_BASE_URL, then restart the Pod or ComfyUI."
+Write-Host "LOCAL INSTALLATION COMPLETE" -ForegroundColor Green
+Write-Host "Continue with the numbered launchers in the scripts folder:"
+Write-Host "  2. 02-COPY-API-KEY.cmd"
+Write-Host "  3. 03-SHOW-RUNPOD-INSTALL.cmd"
+Write-Host "  4. 04-START-FLOW.cmd"
