@@ -49,6 +49,11 @@ class FlowAgentConfig:
 
         base_url = _normalise_base_url(raw_base_url)
         api_key = os.environ.get("FLOW_AGENT_API_KEY", "").strip()
+        if api_key.startswith("{{") and "RUNPOD_SECRET_" in api_key:
+            raise FlowAgentConfigurationError(
+                "FLOW_AGENT_API_KEY still contains an unresolved RunPod secret reference. "
+                "Attach the secret to the Pod environment and fully restart the Pod."
+            )
         hostname = (urlparse(base_url).hostname or "").lower()
         is_local = hostname in {"localhost", "127.0.0.1", "::1"}
         if not api_key and not is_local:

@@ -106,6 +106,8 @@ scripts\04-START-FLOW.cmd
 
 The launcher starts or reuses ngrok, updates `PUBLIC_BASE_URL`, starts Flow Agent when needed, opens the configured project, and copies the public URL. Paste it into `FLOW_AGENT_BASE_URL` and restart ComfyUI.
 
+The upstream extension's **Generate with Flow** button currently calls the protected HTTP endpoint without `SERVER_API_KEY`. With authentication enabled, that convenience button returns HTTP 401. This does not prevent the extension from acting as the Flow bridge; submit protected generation requests through this ComfyUI integration instead. Do not disable authentication on an internet-exposed ngrok endpoint to make that button work.
+
 Implementation scripts live under `scripts\internal`. Runtime configuration, state, and logs live under `%LOCALAPPDATA%\ComfyUIFlowAgent`, so the repository remains clean. Existing runtime files from older versions are migrated automatically the next time step 4 runs.
 
 Status and shutdown:

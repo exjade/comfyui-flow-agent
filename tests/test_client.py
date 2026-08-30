@@ -67,6 +67,17 @@ def test_remote_env_requires_api_key(monkeypatch):
         FlowAgentConfig.from_env()
 
 
+def test_unresolved_runpod_secret_reference_is_rejected(monkeypatch):
+    monkeypatch.setenv("FLOW_AGENT_BASE_URL", "https://example.ngrok-free.app")
+    monkeypatch.setenv(
+        "FLOW_AGENT_API_KEY", "{{ RUNPOD_SECRET_flow_agent_api_key }}"
+    )
+    with pytest.raises(
+        FlowAgentConfigurationError, match="unresolved RunPod secret reference"
+    ):
+        FlowAgentConfig.from_env()
+
+
 def test_health_contract_and_bearer_header():
     session = FakeSession(
         [FakeResponse(payload={"status": "healthy", "extension_connected": True, "has_flow_key": True, "transport": "http"})]

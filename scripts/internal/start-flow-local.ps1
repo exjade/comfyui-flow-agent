@@ -90,6 +90,43 @@ function Set-DotEnvValue([string]$Name, [string]$Value) {
     [System.IO.File]::WriteAllLines($EnvPath, [string[]]$updated, $Utf8NoBom)
 }
 
+function Import-DotEnvForChildProcess {
+    foreach ($Line in Get-Content -LiteralPath $EnvPath) {
+        $Trimmed = $Line.Trim()
+        if (-not $Trimmed -or $Trimmed.StartsWith("#") -or -not $Trimmed.Contains("=")) { continue }
+        $Parts = $Trimmed.Split("=", 2)
+        $Name = $Parts[0].Trim()
+        $Value = $Parts[1].Trim().Trim('"').Trim("'")
+        if ($Name -match '^[A-Za-z_][A-Za-z0-9_]*$') {
+            [Environment]::SetEnvironmentVariable($Name, $Value, "Process")
+        }
+    }
+}
+
+function Get-HttpStatus([string]$Url, [string]$BearerToken) {
+    try {
+        $Headers = @{}
+        if (-not [string]::IsNullOrWhiteSpace($BearerToken)) {
+            $Headers.Authorization = "Bearer $BearerToken"
+        }
+        $Response = Invoke-WebRequest -Uri $Url -Headers $Headers -TimeoutSec 5 -UseBasicParsing
+        return [int]$Response.StatusCode
+    } catch {
+        if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+            return [int]$_.Exception.Response.StatusCode
+        }
+        return 0
+    }
+}
+
+function Test-BackendApiKey([int]$BackendPort, [string]$ExpectedKey) {
+    if ([string]::IsNullOrWhiteSpace($ExpectedKey)) { return $false }
+    $ModelsUrl = "http://127.0.0.1:$BackendPort/v1/models"
+    $CorrectStatus = Get-HttpStatus -Url $ModelsUrl -BearerToken $ExpectedKey
+    $WrongStatus = Get-HttpStatus -Url $ModelsUrl -BearerToken "invalid-key-$([guid]::NewGuid().ToString('N'))"
+    return $CorrectStatus -eq 200 -and $WrongStatus -eq 401
+}
+
 $ProjectId = Get-DotEnvValue "DEFAULT_PROJECT"
 if ([string]::IsNullOrWhiteSpace($ProjectId)) {
     throw "Add DEFAULT_PROJECT=<project-id> to the Flow Agent .env file."
@@ -144,14 +181,24 @@ $PublicUrl = $PublicUrl.TrimEnd("/")
 
 $PreviousPublicUrl = Get-DotEnvValue "PUBLIC_BASE_URL"
 Set-DotEnvValue "PUBLIC_BASE_URL" $PublicUrl
+$CurrentApiKey = Get-DotEnvValue "SERVER_API_KEY"
+Import-DotEnvForChildProcess
 
 $FlowProcess = $null
 $Health = $null
 try { $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3 } catch {}
+$BackendAcceptsCurrentKey = if ($Health) {
+    Test-BackendApiKey -BackendPort $Port -ExpectedKey $CurrentApiKey
+} else {
+    $false
+}
 
-if ($Health -and $PreviousPublicUrl -eq $PublicUrl) {
+if ($Health -and $PreviousPublicUrl -eq $PublicUrl -and $BackendAcceptsCurrentKey) {
     Write-Host "Flow Agent is already running with this tunnel."
 } else {
+    if ($Health -and -not $BackendAcceptsCurrentKey) {
+        Write-Host "The running backend uses different authentication settings and will be restarted." -ForegroundColor Yellow
+    }
     $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($Listener) {
         $Owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($Listener.OwningProcess)"
