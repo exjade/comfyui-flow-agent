@@ -1,10 +1,35 @@
 param(
-    [string]$FlowAgentDir = "Y:\ChatGPT\google_flow_automate\flow-agent\flow-agent",
-    [int]$Port = 8001
+    [string]$FlowAgentDir = "",
+    [string]$NgrokExe = "",
+    [int]$Port = 0
 )
 
 $ErrorActionPreference = "Stop"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ConfigPath = Join-Path $ScriptRoot "flow-local.config.json"
+
+$LocalConfig = $null
+if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
+    $LocalConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+}
+if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
+    $FlowAgentDir = if ($LocalConfig.flow_agent_dir) {
+        [string]$LocalConfig.flow_agent_dir
+    } else {
+        "Y:\ChatGPT\google_flow_automate\flow-agent\flow-agent"
+    }
+}
+if ([string]::IsNullOrWhiteSpace($NgrokExe)) {
+    $NgrokExe = if ($LocalConfig.ngrok_exe) {
+        [string]$LocalConfig.ngrok_exe
+    } else {
+        "Y:\ngrok-v3-stable-windows-amd64\ngrok.exe"
+    }
+}
+if ($Port -le 0) {
+    $Port = if ($LocalConfig.port) { [int]$LocalConfig.port } else { 8001 }
+}
+
 $StatePath = Join-Path $ScriptRoot ".flow-local-state.json"
 $StdoutLog = Join-Path $ScriptRoot "flow-agent.stdout.log"
 $StderrLog = Join-Path $ScriptRoot "flow-agent.stderr.log"
@@ -43,14 +68,22 @@ if ([string]::IsNullOrWhiteSpace($ProjectId)) {
     throw "Añade DEFAULT_PROJECT=<id-del-proyecto> al .env de Flow Agent."
 }
 
-$NgrokCommand = Get-Command ngrok -ErrorAction Stop
+if (Test-Path -LiteralPath $NgrokExe -PathType Leaf) {
+    $NgrokExecutable = (Resolve-Path -LiteralPath $NgrokExe).Path
+} else {
+    $NgrokCommand = Get-Command ngrok -ErrorAction SilentlyContinue
+    if (-not $NgrokCommand) {
+        throw "No se encontró ngrok.exe en '$NgrokExe' ni en PATH."
+    }
+    $NgrokExecutable = $NgrokCommand.Source
+}
 $NgrokProcess = $null
 
 try {
     $TunnelData = Invoke-RestMethod "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 2
 } catch {
     $NgrokProcess = Start-Process `
-        -FilePath $NgrokCommand.Source `
+        -FilePath $NgrokExecutable `
         -ArgumentList @("http", "$Port", "--log=$NgrokLog", "--log-format=json") `
         -WindowStyle Hidden `
         -PassThru

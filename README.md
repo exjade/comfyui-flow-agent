@@ -104,6 +104,41 @@ Los videos se descargan en `ComfyUI/output/flow_agent` y el nodo devuelve:
 
 ## Arranque local automático en Windows
 
+### Instalación inicial guiada
+
+Para una computadora nueva, descarga o clona este repositorio y haz doble clic en:
+
+```text
+scripts\INSTALAR-FLOW.cmd
+```
+
+El asistente:
+
+1. instala Git, uv, ngrok y Google Chrome cuando falten;
+2. clona y prepara `kodelyx/flow-agent` con su Python aislado;
+3. abre ngrok para guardar el authtoken;
+4. abre la página de extensiones y copia la carpeta correcta al portapapeles;
+5. abre Google Flow y extrae el ID desde la URL del proyecto;
+6. genera una API key criptográficamente aleatoria sin imprimirla;
+7. conserva la key existente si el instalador vuelve a ejecutarse;
+8. crea el `.env`, la configuración local y un acceso directo en el escritorio;
+9. inicia Flow Agent y ngrok, y deja la URL pública en el portapapeles.
+
+Por seguridad, el usuario todavía debe completar cuatro acciones:
+
+- iniciar sesión en Google y disponer de acceso a Flow;
+- pulsar **Cargar descomprimida** en el navegador;
+- copiar el authtoken desde su propia cuenta de ngrok;
+- guardar la API key como secreto y la URL como variable del Pod en RunPod.
+
+En RunPod, después de clonar este repositorio, la instalación puede hacerse con:
+
+```bash
+bash /workspace/ComfyUI/custom_nodes/comfyui-flow-agent/scripts/INSTALAR-RUNPOD.sh
+```
+
+El instalador de RunPod utiliza automáticamente el mismo Python que ejecuta ComfyUI.
+
 El `.env` local de Flow Agent necesita como mínimo:
 
 ```env
