@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptRoot "flow-local.config.json"
 $StatePath = Join-Path $ScriptRoot ".flow-local-state.json"
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "INICIAR FLOW AGENT.lnk"
+$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "START FLOW AGENT.lnk"
 
 function Get-FullPath([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return "" }
@@ -26,7 +26,7 @@ function Stop-ManagedProcessTree([int]$RootProcessId, [string]$ExpectedKind) {
         $Name -match "^(uv|python|python3)(\.exe)?$" -and $CommandLine -match "main\.py"
     }
     if (-not $MatchesExpectedProcess) {
-        Write-Warning "Se conservo el PID $RootProcessId porque ya no parece pertenecer a $ExpectedKind."
+        Write-Warning "PID $RootProcessId was preserved because it no longer appears to belong to $ExpectedKind."
         return
     }
 
@@ -37,26 +37,26 @@ function Stop-ManagedProcessTree([int]$RootProcessId, [string]$ExpectedKind) {
     Stop-Process -Id $RootProcessId -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "DESINSTALADOR LOCAL DE FLOW AGENT" -ForegroundColor Magenta
+Write-Host "FLOW AGENT LOCAL UNINSTALLER" -ForegroundColor Magenta
 Write-Host ""
-Write-Host "Se eliminaran solamente:" -ForegroundColor Yellow
-Write-Host "  - La copia de Flow Agent creada por este instalador."
-Write-Host "  - Los archivos privados dentro de esa copia, como .env, .venv, cache y salidas."
-Write-Host "  - La configuracion, estado, logs y acceso directo de este proyecto."
+Write-Host "Only the following items will be removed:" -ForegroundColor Yellow
+Write-Host "  - The Flow Agent copy created by this installer."
+Write-Host "  - Private files inside that copy, including .env, .venv, cache, and outputs."
+Write-Host "  - This project's configuration, state, logs, and desktop shortcut."
 Write-Host ""
-Write-Host "Se conservaran:" -ForegroundColor Green
-Write-Host "  - Google Chrome, sus perfiles, historial y cualquier dato del navegador."
-Write-Host "  - La configuracion de extensiones dentro del navegador."
-Write-Host "  - Los proyectos y archivos de Google Flow."
-Write-Host "  - Python de Windows, entornos externos, paquetes y caches compartidas."
-Write-Host "  - Git, uv, ngrok y la configuracion compartida de ngrok."
-Write-Host "  - ComfyUI, sus modelos, workflows y archivos generados."
+Write-Host "The following items will be preserved:" -ForegroundColor Green
+Write-Host "  - Google Chrome, its profiles, history, and all browser data."
+Write-Host "  - Browser extension settings."
+Write-Host "  - Google Flow projects and files."
+Write-Host "  - Windows Python, external environments, shared packages, and caches."
+Write-Host "  - Git, uv, ngrok, and shared ngrok configuration."
+Write-Host "  - ComfyUI, models, workflows, and ComfyUI-generated files."
 Write-Host ""
 
 if (-not $Confirm) {
-    $Answer = Read-Host "Escribe DESINSTALAR para continuar"
-    if ($Answer -cne "DESINSTALAR") {
-        Write-Host "Operacion cancelada. No se elimino nada."
+    $Answer = Read-Host "Type UNINSTALL to continue"
+    if ($Answer -cne "UNINSTALL") {
+        Write-Host "Operation canceled. Nothing was removed."
         exit 0
     }
 }
@@ -65,7 +65,7 @@ $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $Principal = New-Object Security.Principal.WindowsPrincipal($Identity)
 $IsAdministrator = $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $IsAdministrator) {
-    if ($Elevated) { throw "No se obtuvieron permisos para completar la desinstalacion." }
+    if ($Elevated) { throw "Administrator permission was not granted to complete the uninstall." }
     $Arguments = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
@@ -82,7 +82,7 @@ if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     try {
         $Config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
     } catch {
-        Write-Warning "La configuracion local no es valida. Se conservara la carpeta de Flow Agent."
+        Write-Warning "The local configuration is invalid. The Flow Agent folder will be preserved."
     }
 }
 
@@ -92,7 +92,7 @@ if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
         if ($State.flow_pid) { Stop-ManagedProcessTree -RootProcessId ([int]$State.flow_pid) -ExpectedKind "flow" }
         if ($State.ngrok_pid) { Stop-ManagedProcessTree -RootProcessId ([int]$State.ngrok_pid) -ExpectedKind "ngrok" }
     } catch {
-        Write-Warning "No se pudieron detener todos los procesos registrados: $($_.Exception.Message)"
+        Write-Warning "Not all registered processes could be stopped: $($_.Exception.Message)"
     }
 }
 
@@ -120,7 +120,7 @@ if ($Config -and $Config.managed_flow_repository -eq $true) {
     if ($OwnershipVerified) {
         if (Test-Path -LiteralPath $FlowRepoDir) {
             Remove-Item -LiteralPath $FlowRepoDir -Recurse -Force
-            Write-Host "Eliminado: $FlowRepoDir"
+            Write-Host "Removed: $FlowRepoDir"
         }
         Remove-Item -LiteralPath $MarkerPath -Force -ErrorAction SilentlyContinue
         if ((Test-Path -LiteralPath $InstallRoot) -and -not (Get-ChildItem -LiteralPath $InstallRoot -Force | Select-Object -First 1)) {
@@ -128,24 +128,24 @@ if ($Config -and $Config.managed_flow_repository -eq $true) {
         }
         $RemovedManagedRepository = $true
     } else {
-        Write-Warning "No se pudo demostrar que la carpeta de Flow Agent fue creada por este instalador. Se conservo completa."
+        Write-Warning "Ownership could not be verified. The Flow Agent folder was preserved."
     }
 } else {
-    Write-Warning "La instalacion no tiene una marca de propiedad valida. La carpeta de Flow Agent se conservara."
+    Write-Warning "The installation has no valid ownership marker. The Flow Agent folder will be preserved."
 }
 
 if (Test-Path -LiteralPath $ShortcutPath -PathType Leaf) {
     try {
         $Shell = New-Object -ComObject WScript.Shell
         $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-        $ExpectedTarget = Get-FullPath (Join-Path $ScriptRoot "INICIAR-FLOW.cmd")
+        $ExpectedTarget = Get-FullPath (Join-Path $ScriptRoot "START-FLOW.cmd")
         if ((Get-FullPath $Shortcut.TargetPath) -eq $ExpectedTarget) {
             Remove-Item -LiteralPath $ShortcutPath -Force
         } else {
-            Write-Warning "Se conservo el acceso directo porque pertenece a otro destino."
+            Write-Warning "The shortcut was preserved because it points to another target."
         }
     } catch {
-        Write-Warning "No se pudo validar el acceso directo; se conservo."
+        Write-Warning "The shortcut could not be validated and was preserved."
     }
 }
 
@@ -161,8 +161,8 @@ foreach ($Artifact in $LocalArtifacts) {
 }
 
 Write-Host ""
-Write-Host "DESINSTALACION TERMINADA" -ForegroundColor Green
+Write-Host "UNINSTALL COMPLETE" -ForegroundColor Green
 if (-not $RemovedManagedRepository) {
-    Write-Host "La copia de Flow Agent se conservo por seguridad; no tenia una marca verificable del instalador." -ForegroundColor Yellow
+    Write-Host "The Flow Agent copy was preserved for safety because it had no verifiable installer marker." -ForegroundColor Yellow
 }
-Write-Host "Chrome y todos los datos personales del usuario permanecen intactos."
+Write-Host "Chrome and all personal user data remain untouched."

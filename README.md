@@ -1,72 +1,45 @@
 # ComfyUI Flow Agent
 
-Nodos de ComfyUI para usar Google Flow desde un RunPod remoto mediante Flow Agent y ngrok.
+ComfyUI nodes for using Google Flow from a remote RunPod through a local Flow Agent instance and ngrok.
 
-Contratos verificados contra `kodelyx/flow-agent` revisión:
+API contracts were verified against `kodelyx/flow-agent` revision `206285a47d15018765df5b16bce1d72198b1bb29` (Flow Agent 2.0.7).
 
-```text
-206285a47d15018765df5b16bce1d72198b1bb29 (Flow Agent 2.0.7)
-```
+## Included nodes
 
-## Nodos incluidos
-
-| Nodo | Función |
+| Node | Purpose |
 |---|---|
-| `Flow / Nano Banana` | Texto o ingredientes/referencias → imágenes |
-| `Flow / Omni Flash Video` | Texto, imagen inicial, fotograma inicial/final, ingredientes o edición → video |
-| `Flow / Upload Media` | Sube una imagen o archivo de imagen/video y devuelve un `media_id` reutilizable |
-| `Flow / Upsample Video` | Convierte un video ya generado a 1080p o 4K mediante Flow |
+| `Flow / Nano Banana` | Generate images from text, ingredients, or references |
+| `Flow / Omni Flash Video` | Generate or edit video from text, frames, or ingredients |
+| `Flow / Upload Media` | Upload an image or video and return a reusable `media_id` |
+| `Flow / Upsample Video` | Upsample generated video to 1080p or 4K |
 
-## Capacidades y límites confirmados
+## Confirmed capabilities
 
-### Imágenes
+Images support `harbor_seal`, `narwhal`, and `gem_pix_2`; 1:1, 16:9, 9:16, 4:3, and 3:4; `count` 1-20; up to 10 references through `ref_media_ids`; and seeds from 0 to 4294967295. `gem_pix_2` may create extra internal candidates, but this client strictly limits ComfyUI output to the requested `count`.
 
-- Modelos publicados: `harbor_seal`, `narwhal`, `gem_pix_2`.
-- Ratios: 1:1, 16:9, 9:16, 4:3 y 3:4.
-- `count`: 1–20; Flow Agent divide internamente en llamadas de hasta 4.
-- Ingredientes/referencias: hasta 10 imágenes mediante `ref_media_ids`.
-- Seed: 0–4294967295.
+Video supports text-to-video, start image, first/last frames, up to 10 ingredient images, and editing with one source video plus optional references. Durations are 4, 6, 8, or 10 seconds in landscape or portrait. Delivery supports native 720p and upsample to 1080p or account-dependent 4K. The current upstream schema accepts only one source video.
 
-`gem_pix_2` puede devolver varias candidatas para una sola solicitud. Este cliente aplica el contrato solicitado y corta la respuesta a `count`; por tanto `count=1` entrega exactamente una imagen a ComfyUI. Google Flow puede seguir mostrando candidatas adicionales creadas internamente en su proyecto.
-
-### Videos (Omni Flash)
-
-- Texto → video.
-- Una imagen inicial → video.
-- Un fotograma inicial + un fotograma final → video.
-- Ingredientes/referencias → video: hasta 10 imágenes.
-- Edición: un video fuente y, opcionalmente, hasta 10 imágenes de referencia.
-- Duraciones: 4, 6, 8 o 10 segundos.
-- Ratios: landscape o portrait.
-- Entrega: 720p nativo, 1080p mediante upsample gratuito y 4K mediante upsample de pago sujeto al nivel/créditos de la cuenta.
-- `count`: 1–20 para generación; la edición de video produce un resultado por petición.
-- Modelo automático: Flow Agent usa `abra_t2v_<duration>s`. El campo avanzado `video_model_override` permite enviar otro `videoModelKey` exacto si el upstream lo documenta en el futuro.
-
-El esquema actual de Flow Agent **no soporta una lista de varios videos de referencia**. Admite un solo video fuente para edición. No se inventa un campo para una capacidad que el backend no ofrece.
-
-## Esquemas HTTP utilizados
+## Verified HTTP endpoints
 
 - `GET /health`
 - `GET /v1/models`
-- `POST /v1/upload` con `{"image_base64":"data:...;base64,..."}` para imagen o video
+- `POST /v1/upload` with `{"image_base64":"data:...;base64,..."}`
 - `POST /v1/images/generations`
 - `POST /v1/videos/generations`
 - `GET /v1/videos/generations/{job_id}`
 - `POST /v1/videos/upsample`
 - `GET /download/{filename}`
 
-Generación y upsample usan una sola `Idempotency-Key` durante todos los reintentos. Los trabajos de video se consultan hasta `succeeded` o `failed`.
+Generation and upsample requests reuse one `Idempotency-Key` across retries. Video jobs are polled until `succeeded` or `failed`. Uploads are not retried automatically because the upstream upload contract does not define idempotency.
 
-## Configuración de RunPod
-
-Variables de entorno del pod:
+## RunPod configuration
 
 ```env
-FLOW_AGENT_BASE_URL=https://tu-tunel.ngrok-free.app
-FLOW_AGENT_API_KEY=misma-clave-que-SERVER_API_KEY
+FLOW_AGENT_BASE_URL=https://your-tunnel.ngrok-free.app
+FLOW_AGENT_API_KEY=same-value-as-SERVER_API_KEY
 ```
 
-Opcionales:
+Optional settings:
 
 ```env
 FLOW_AGENT_CONNECT_TIMEOUT_SECONDS=10
@@ -75,15 +48,13 @@ FLOW_AGENT_MAX_VIDEO_DOWNLOAD_MB=2048
 FLOW_AGENT_MAX_UPLOAD_MB=2048
 ```
 
-Instalación/actualización:
+Install on RunPod:
 
 ```bash
-cd /workspace/ComfyUI/custom_nodes
-git -C comfyui-flow-agent pull --ff-only
-python -m pip install -r comfyui-flow-agent/requirements.txt
+bash /workspace/ComfyUI/custom_nodes/comfyui-flow-agent/scripts/INSTALL-RUNPOD.sh
 ```
 
-Reinicia ComfyUI y comprueba:
+Restart ComfyUI and verify registration:
 
 ```bash
 python - <<'PY'
@@ -94,134 +65,68 @@ for node in ("FlowNanoBanana", "FlowOmniFlashVideo", "FlowUploadMedia", "FlowVid
 PY
 ```
 
-Los videos se descargan en `ComfyUI/output/flow_agent` y el nodo devuelve:
+Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline preview, native `VIDEO`, Video Helper Suite-compatible `VHS_FILENAMES`, paths, media IDs, source URLs, and job JSON. `source_video_path` must point to a RunPod file, not a Windows path.
 
-- vista previa de video en la interfaz;
-- `VHS_FILENAMES`, compatible con Video Helper Suite;
-- rutas, `media_id`, URLs y respuesta del job como JSON.
+## Guided Windows setup
 
-`source_video_path` se refiere a una ruta dentro de RunPod, no a una ruta de Windows del PC local.
-
-## Arranque local automático en Windows
-
-### Instalación inicial guiada
-
-Para una computadora nueva, descarga o clona este repositorio y haz doble clic en:
+On a new Windows computer, download or clone this repository and double-click:
 
 ```text
-scripts\INSTALAR-FLOW.cmd
+scripts\INSTALL-FLOW.cmd
 ```
 
-El asistente:
+The assistant installs missing tools, clones and prepares Flow Agent in an isolated environment, configures ngrok, guides extension loading, collects a Google Flow project URL, generates a secure API key, creates private local configuration and a desktop shortcut, and starts the services.
 
-1. instala Git, uv, ngrok y Google Chrome cuando falten;
-2. clona y prepara `kodelyx/flow-agent` con su Python aislado;
-3. abre ngrok para guardar el authtoken;
-4. abre la página de extensiones y copia la carpeta correcta al portapapeles;
-5. abre Google Flow y extrae el ID desde la URL del proyecto;
-6. genera una API key criptográficamente aleatoria sin imprimirla;
-7. conserva la key existente si el instalador vuelve a ejecutarse;
-8. crea el `.env`, la configuración local y un acceso directo en el escritorio;
-9. inicia Flow Agent y ngrok, y deja la URL pública en el portapapeles.
+The user must still sign in to Google, load the unpacked extension, provide their own ngrok authtoken, and save the API key and public URL in RunPod.
 
-Por seguridad, el usuario todavía debe completar cuatro acciones:
-
-- iniciar sesión en Google y disponer de acceso a Flow;
-- pulsar **Cargar descomprimida** en el navegador;
-- copiar el authtoken desde su propia cuenta de ngrok;
-- guardar la API key como secreto y la URL como variable del Pod en RunPod.
-
-En RunPod, después de clonar este repositorio, la instalación puede hacerse con:
-
-```bash
-bash /workspace/ComfyUI/custom_nodes/comfyui-flow-agent/scripts/INSTALAR-RUNPOD.sh
-```
-
-El instalador de RunPod utiliza automáticamente el mismo Python que ejecuta ComfyUI.
-
-El `.env` local de Flow Agent necesita como mínimo:
-
-```env
-OPENAI_API_HOST=127.0.0.1
-OPENAI_API_PORT=8001
-SERVER_API_KEY=tu-clave
-DEFAULT_PROJECT=id-real-de-tu-proyecto
-```
-
-Desde una copia local de este repositorio, ejecuta:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-flow-local.ps1
-```
-
-O haz doble clic en:
+Start Flow Agent through the desktop shortcut or:
 
 ```text
-scripts\INICIAR-FLOW.cmd
+scripts\START-FLOW.cmd
 ```
 
-El script:
+The launcher starts or reuses ngrok, updates `PUBLIC_BASE_URL`, starts Flow Agent when needed, opens the configured project, and copies the public URL. Paste it into `FLOW_AGENT_BASE_URL` and restart ComfyUI.
 
-1. inicia o reutiliza ngrok;
-2. obtiene su URL HTTPS desde el panel local de ngrok;
-3. actualiza automáticamente `PUBLIC_BASE_URL` en el `.env` de Flow Agent;
-4. reinicia Flow Agent solamente cuando hace falta;
-5. abre el proyecto configurado en `DEFAULT_PROJECT`;
-6. copia la nueva URL de ngrok al portapapeles.
-
-Después solo pega esa URL en `FLOW_AGENT_BASE_URL` de RunPod y reinicia ComfyUI. La clave no cambia.
-
-Estado y apagado:
+Status and shutdown:
 
 ```powershell
 .\scripts\status-flow-local.ps1
 .\scripts\stop-flow-local.ps1
 ```
 
-### Desinstalacion local segura
+## Safe local uninstall
 
-Haz doble clic en:
+Double-click:
 
 ```text
-scripts\DESINSTALAR-FLOW.cmd
+scripts\UNINSTALL-FLOW.cmd
 ```
 
-El desinstalador exige escribir `DESINSTALAR` y solo borra la copia de Flow Agent cuando una marca privada demuestra que fue creada por este instalador. Dentro de esa copia se eliminan su `.env`, el `.venv` privado, cache, salidas locales del backend, logs y estado. Tambien elimina la configuracion privada y el acceso directo que apunta a este proyecto.
+The exact word `UNINSTALL` is required. The Flow Agent copy is removed only when a private ownership marker proves that this installer created it. Manual or older installations without that marker are preserved.
 
-No desinstala ni modifica Python de Windows, entornos virtuales externos, paquetes o caches compartidas, Google Chrome, perfiles, historial, cookies, configuracion de extensiones, proyectos de Google Flow, Git, uv, ngrok, credenciales compartidas de ngrok, ComfyUI, modelos, workflows ni archivos generados por ComfyUI. La entrada de la extension desempaquetada se conserva en el navegador; el usuario puede quitarla manualmente si lo desea.
+The uninstaller never removes or modifies Windows Python, external environments, shared packages or caches, Google Chrome, browser data or extension settings, Google Flow projects, Git, uv, ngrok, shared ngrok credentials, ComfyUI, models, workflows, or ComfyUI-generated files. The unpacked extension entry remains in the browser and may be removed manually.
 
-Las instalaciones manuales o anteriores que no tengan una marca verificable se conservan completas. Esto evita borrar una carpeta que el usuario haya creado o reutilizado por su cuenta.
+## Reference media
 
-Si Flow Agent está en otra carpeta:
+- `Flow / Nano Banana`: use `reference_image` and `reference_image_2` through `reference_image_10`. The combined maximum is 10.
+- `Flow / Omni Flash Video` modes:
+  - `start image to video` requires `start_image`.
+  - `first + last frame` requires `start_image` and `end_image`.
+  - `ingredients / reference images` requires at least one reference input.
+  - `edit source video` requires `source_video_media_id` or `source_video_path`.
+- Preserve returned `media_id` values to reuse media without uploading again.
 
-```powershell
-.\scripts\start-flow-local.ps1 -FlowAgentDir "D:\ruta\flow-agent\flow-agent"
-```
-
-## Uso de referencias
-
-- En `Flow / Nano Banana`, usa `reference_image` y los sockets `reference_image_2`…`reference_image_10`. Cada socket también puede recibir un batch; el total combinado nunca puede superar 10.
-- En `Flow / Omni Flash Video`, selecciona primero `mode`:
-  - `start image to video`: requiere `start_image`;
-  - `first + last frame`: requiere `start_image` y `end_image`;
-  - `ingredients / reference images`: requiere al menos uno de los 10 sockets de referencia;
-  - `edit source video`: requiere `source_video_media_id` o `source_video_path`, y permite `reference_images` adicionales.
-- Para reutilizar un video sin volver a subirlo, conserva su `media_id`.
-
-## Pruebas
-
-Los tests de red simulada no llaman Google Flow:
+## Tests
 
 ```bash
-cd tests
 python -m pytest -q
 ```
 
-Verifican autenticación, payloads reales, idempotencia, polling, límite estricto de `count`, referencias y conversiones de imágenes. Los tests de tensor requieren el Python de ComfyUI, que ya incluye PyTorch.
+Tests use simulated network responses and cover authentication, payload contracts, idempotency, polling, strict output limits, references, image conversion, and native video output.
 
-## Seguridad
+## Security
 
-- El Bearer token solo se envía al mismo origen que `FLOW_AGENT_BASE_URL`; nunca a URLs firmadas externas.
-- `/v1/upload` no se reintenta automáticamente porque upstream no define idempotencia para uploads.
-- Descargas y uploads tienen límites de memoria configurables.
-- No guardes `FLOW_AGENT_API_KEY` en el workflow ni en Git.
+- The Bearer token is sent only to the `FLOW_AGENT_BASE_URL` origin.
+- `/v1/upload` is not automatically retried because upstream does not define upload idempotency.
+- Upload and download limits are configurable.
+- Never store `FLOW_AGENT_API_KEY` in a workflow or Git.

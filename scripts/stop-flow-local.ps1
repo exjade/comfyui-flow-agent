@@ -10,7 +10,7 @@ $IsAdministrator = $Principal.IsInRole(
 
 if (-not $IsAdministrator) {
     if ($Elevated) {
-        throw "No se obtuvieron permisos de administrador para detener Flow Agent."
+        throw "Administrator permission was not granted to stop Flow Agent."
     }
     $Arguments = @(
         "-NoProfile",
@@ -19,7 +19,7 @@ if (-not $IsAdministrator) {
         "-Elevated"
     )
     Start-Process powershell.exe -Verb RunAs -ArgumentList $Arguments
-    Write-Host "Se solicito permiso de administrador en otra ventana."
+    Write-Host "Administrator permission was requested in another window."
     exit 0
 }
 
@@ -40,13 +40,13 @@ function Stop-ProcessTree([int]$RootProcessId) {
         # stopped. Ignore that harmless race and continue on to ngrok.
         Stop-Process -Id $RootProcessId -Force -ErrorAction SilentlyContinue
         if (-not (Get-Process -Id $RootProcessId -ErrorAction SilentlyContinue)) {
-            Write-Host "Proceso detenido: $ProcessName ($RootProcessId)"
+            Write-Host "Stopped process: $ProcessName ($RootProcessId)"
         }
     }
 }
 
 if (-not (Test-Path -LiteralPath $StatePath)) {
-    Write-Host "No existe estado de una ejecucion automatizada."
+    Write-Host "No automated-run state file exists."
     exit 0
 }
 
@@ -65,7 +65,7 @@ foreach ($ProcessId in $ProcessIds) {
     try {
         Stop-ProcessTree -RootProcessId $ProcessId
     } catch {
-        Write-Warning "No se pudo detener por completo el proceso $ProcessId`: $($_.Exception.Message)"
+        Write-Warning "Process $ProcessId could not be stopped completely: $($_.Exception.Message)"
     }
 }
 
@@ -81,10 +81,10 @@ do {
 
 if ($RemainingPorts.Count -gt 0) {
     $Details = ($RemainingPorts | ForEach-Object {
-        "puerto $($_.LocalPort), PID $($_.OwningProcess)"
+        "port $($_.LocalPort), PID $($_.OwningProcess)"
     }) -join "; "
-    throw "Quedaron servicios activos: $Details"
+    throw "Some services are still active: $Details"
 }
 
 Remove-Item -LiteralPath $StatePath -ErrorAction SilentlyContinue
-Write-Host "Flow Agent y ngrok quedaron detenidos." -ForegroundColor Green
+Write-Host "Flow Agent and ngrok have stopped." -ForegroundColor Green

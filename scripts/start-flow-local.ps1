@@ -20,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
         if (Test-Path -LiteralPath (Join-Path $DefaultFlowAgentDir ".env") -PathType Leaf) {
             $FlowAgentDir = $DefaultFlowAgentDir
         } else {
-            throw "No se encontro la instalacion local de Flow Agent. Ejecuta scripts\INSTALAR-FLOW.cmd o indica -FlowAgentDir."
+            throw "Flow Agent was not found. Run scripts\INSTALL-FLOW.cmd or provide -FlowAgentDir."
         }
     }
 }
@@ -30,7 +30,7 @@ if ([string]::IsNullOrWhiteSpace($NgrokExe)) {
     } else {
         $NgrokCommand = Get-Command ngrok -ErrorAction SilentlyContinue
         if (-not $NgrokCommand) {
-            throw "No se encontro ngrok. Ejecuta scripts\INSTALAR-FLOW.cmd o indica -NgrokExe."
+            throw "ngrok was not found. Run scripts\INSTALL-FLOW.cmd or provide -NgrokExe."
         }
         $NgrokExe = $NgrokCommand.Source
     }
@@ -46,7 +46,7 @@ $NgrokLog = Join-Path $ScriptRoot "ngrok.log"
 $EnvPath = Join-Path $FlowAgentDir ".env"
 
 if (-not (Test-Path -LiteralPath $EnvPath)) {
-    throw "No se encontro $EnvPath"
+    throw "File not found: $EnvPath"
 }
 
 function Get-DotEnvValue([string]$Name) {
@@ -74,7 +74,7 @@ function Set-DotEnvValue([string]$Name, [string]$Value) {
 
 $ProjectId = Get-DotEnvValue "DEFAULT_PROJECT"
 if ([string]::IsNullOrWhiteSpace($ProjectId)) {
-    throw "Anade DEFAULT_PROJECT=<id-del-proyecto> al .env de Flow Agent."
+    throw "Add DEFAULT_PROJECT=<project-id> to the Flow Agent .env file."
 }
 
 if (Test-Path -LiteralPath $NgrokExe -PathType Leaf) {
@@ -82,7 +82,7 @@ if (Test-Path -LiteralPath $NgrokExe -PathType Leaf) {
 } else {
     $NgrokCommand = Get-Command ngrok -ErrorAction SilentlyContinue
     if (-not $NgrokCommand) {
-        throw "No se encontro ngrok.exe en '$NgrokExe' ni en PATH."
+        throw "ngrok.exe was not found at '$NgrokExe' or in PATH."
     }
     $NgrokExecutable = $NgrokCommand.Source
 }
@@ -120,7 +120,7 @@ while (-not $PublicUrl -and (Get-Date) -lt $Deadline) {
 }
 
 if ([string]::IsNullOrWhiteSpace($PublicUrl)) {
-    throw "ngrok no entrego un tunel HTTPS. Revisa $NgrokLog"
+    throw "ngrok did not provide an HTTPS tunnel. Check $NgrokLog"
 }
 $PublicUrl = $PublicUrl.TrimEnd("/")
 
@@ -132,13 +132,13 @@ $Health = $null
 try { $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3 } catch {}
 
 if ($Health -and $PreviousPublicUrl -eq $PublicUrl) {
-    Write-Host "Flow Agent ya estaba ejecutandose con este tunel."
+    Write-Host "Flow Agent is already running with this tunnel."
 } else {
     $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($Listener) {
         $Owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($Listener.OwningProcess)"
         if ($Owner.CommandLine -notmatch "main\.py") {
-            throw "El puerto $Port esta ocupado por otro programa: $($Owner.CommandLine)"
+            throw "Port $Port is already used by another program: $($Owner.CommandLine)"
         }
         Stop-Process -Id $Listener.OwningProcess -Force
         Start-Sleep -Seconds 1
@@ -162,7 +162,7 @@ do {
 } while (-not $Health -and (Get-Date) -lt $Deadline)
 
 if (-not $Health) {
-    throw "Flow Agent no respondio. Revisa $StderrLog"
+    throw "Flow Agent did not respond. Check $StderrLog"
 }
 
 $ProjectUrl = "https://labs.google/fx/es-419/tools/flow/project/$ProjectId"
@@ -179,8 +179,8 @@ $State = [ordered]@{
 $State | ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding utf8
 
 Write-Host ""
-Write-Host "LISTO" -ForegroundColor Green
-Write-Host "URL copiada al portapapeles: $PublicUrl" -ForegroundColor Cyan
-Write-Host "Proyecto abierto: $ProjectUrl"
-Write-Host "Estado local: $($Health.status)"
-Write-Host "Pega la URL en FLOW_AGENT_BASE_URL de RunPod y reinicia ComfyUI."
+Write-Host "READY" -ForegroundColor Green
+Write-Host "URL copied to the clipboard: $PublicUrl" -ForegroundColor Cyan
+Write-Host "Project opened: $ProjectUrl"
+Write-Host "Local status: $($Health.status)"
+Write-Host "Paste the URL into FLOW_AGENT_BASE_URL on RunPod, then restart ComfyUI."

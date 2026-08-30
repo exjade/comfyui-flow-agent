@@ -48,11 +48,11 @@ function createPreview(node) {
     actions.style.fontSize = "12px";
 
     const status = document.createElement("span");
-    status.textContent = "Video de Flow";
+    status.textContent = "Flow video";
     status.style.color = "#bbb";
 
     const openLink = document.createElement("a");
-    openLink.textContent = "Abrir / descargar";
+    openLink.textContent = "Open / download";
     openLink.target = "_blank";
     openLink.rel = "noopener noreferrer";
     openLink.style.color = "#8ec5ff";

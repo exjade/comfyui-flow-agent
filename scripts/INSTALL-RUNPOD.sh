@@ -7,7 +7,7 @@ NODE_DIR="$CUSTOM_NODES_DIR/comfyui-flow-agent"
 REPOSITORY="https://github.com/exjade/comfyui-flow-agent.git"
 
 if [[ ! -d "$COMFY_DIR" ]]; then
-    echo "No se encontró ComfyUI en: $COMFY_DIR" >&2
+    echo "ComfyUI was not found at: $COMFY_DIR" >&2
     exit 1
 fi
 
@@ -15,7 +15,7 @@ mkdir -p "$CUSTOM_NODES_DIR"
 if [[ -d "$NODE_DIR/.git" ]]; then
     git -C "$NODE_DIR" pull --ff-only
 elif [[ -e "$NODE_DIR" ]]; then
-    echo "La ruta existe pero no es un repositorio Git: $NODE_DIR" >&2
+    echo "The path exists but is not a Git repository: $NODE_DIR" >&2
     exit 1
 else
     git clone "$REPOSITORY" "$NODE_DIR"
@@ -32,11 +32,11 @@ fi
 
 cat <<'MESSAGE'
 
-INSTALACIÓN DE RUNPOD TERMINADA
+RUNPOD INSTALLATION COMPLETE
 
-Configura en el Pod:
-  FLOW_AGENT_BASE_URL=https://tu-url.ngrok-free.dev
+Configure these Pod environment variables:
+  FLOW_AGENT_BASE_URL=https://your-url.ngrok-free.dev
   FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}
 
-Después reinicia el Pod o el proceso de ComfyUI.
+Then restart the Pod or the ComfyUI process.
 MESSAGE

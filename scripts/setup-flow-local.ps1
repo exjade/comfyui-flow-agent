@@ -39,22 +39,22 @@ function Install-WingetPackage(
 ) {
     $Existing = Find-CommandPath $CommandName
     if ($Existing) {
-        Write-Host "$DisplayName ya esta instalado: $Existing" -ForegroundColor Green
+        Write-Host "$DisplayName is already installed: $Existing" -ForegroundColor Green
         return $Existing
     }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        throw "Windows Package Manager (winget) no esta disponible. Actualiza App Installer desde Microsoft Store."
+        throw "Windows Package Manager (winget) is unavailable. Update App Installer from Microsoft Store."
     }
 
-    Write-Host "Instalando $DisplayName..." -ForegroundColor Yellow
+    Write-Host "Installing $DisplayName..." -ForegroundColor Yellow
     & winget @WingetArguments --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
-        throw "winget no pudo instalar $DisplayName (codigo $LASTEXITCODE)."
+        throw "winget could not install $DisplayName (exit code $LASTEXITCODE)."
     }
     Refresh-Path
     $Installed = Find-CommandPath $CommandName
     if (-not $Installed) {
-        throw "$DisplayName se instalo, pero '$CommandName' aun no esta disponible. Reinicia Windows y vuelve a ejecutar INSTALAR-FLOW.cmd."
+        throw "$DisplayName was installed, but '$CommandName' is not available yet. Restart Windows and run INSTALL-FLOW.cmd again."
     }
     return $Installed
 }
@@ -124,10 +124,10 @@ function Find-ChromiumBrowser {
         Select-Object -First 1
 }
 
-Write-Host "INSTALADOR INICIAL - FLOW AGENT + NGROK" -ForegroundColor Magenta
-Write-Host "Instalacion local: $InstallRoot"
+Write-Host "FLOW AGENT + NGROK INITIAL SETUP" -ForegroundColor Magenta
+Write-Host "Local installation: $InstallRoot"
 
-Write-Step "1/7 Instalando herramientas"
+Write-Step "1/7 Installing required tools"
 $GitExe = Install-WingetPackage "Git" @(
     "install", "--id", "Git.Git", "-e"
 ) "git.exe"
@@ -139,48 +139,48 @@ $NgrokExe = Install-WingetPackage "ngrok" @(
 ) "ngrok.exe"
 $BrowserExe = Find-ChromiumBrowser
 if (-not $BrowserExe) {
-    Write-Host "Instalando Google Chrome..." -ForegroundColor Yellow
+    Write-Host "Installing Google Chrome..." -ForegroundColor Yellow
     & winget install --id Google.Chrome -e --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) { throw "winget no pudo instalar Google Chrome." }
+    if ($LASTEXITCODE -ne 0) { throw "winget could not install Google Chrome." }
     Refresh-Path
     $BrowserExe = Find-ChromiumBrowser
     if (-not $BrowserExe) {
-        throw "Google Chrome se instalo, pero aun no esta disponible. Reinicia Windows y vuelve a ejecutar INSTALAR-FLOW.cmd."
+        throw "Google Chrome was installed, but is not available yet. Restart Windows and run INSTALL-FLOW.cmd again."
     }
 }
 
-Write-Step "2/7 Descargando Flow Agent"
+Write-Step "2/7 Downloading Flow Agent"
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
     & $GitExe -C $FlowRepoDir pull --ff-only
-    if ($LASTEXITCODE -ne 0) { throw "No se pudo actualizar Flow Agent." }
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent could not be updated." }
 } elseif (Test-Path -LiteralPath $FlowRepoDir) {
-    throw "La carpeta '$FlowRepoDir' existe, pero no es un repositorio Git. Muevela o elige otro InstallRoot."
+    throw "'$FlowRepoDir' exists but is not a Git repository. Move it or choose another InstallRoot."
 } else {
     & $GitExe clone $FlowRepository $FlowRepoDir
-    if ($LASTEXITCODE -ne 0) { throw "No se pudo clonar Flow Agent." }
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent could not be cloned." }
     $CreatedFlowRepository = $true
 }
 
-Write-Step "3/7 Preparando Python y dependencias"
+Write-Step "3/7 Preparing the isolated runtime and dependencies"
 Push-Location $FlowAgentDir
 try {
     & $UvExe sync
-    if ($LASTEXITCODE -ne 0) { throw "uv sync no pudo preparar Flow Agent." }
+    if ($LASTEXITCODE -ne 0) { throw "uv sync could not prepare Flow Agent." }
 } finally {
     Pop-Location
 }
 
-Write-Step "4/7 Configurando ngrok"
+Write-Step "4/7 Configuring ngrok"
 Start-Process "https://dashboard.ngrok.com/get-started/your-authtoken"
-$SecureToken = Read-Host "Pega tu authtoken de ngrok (se ocultara)" -AsSecureString
+$SecureToken = Read-Host "Paste your ngrok authtoken (input is hidden)" -AsSecureString
 $NgrokToken = Convert-SecureStringToText $SecureToken
-if ([string]::IsNullOrWhiteSpace($NgrokToken)) { throw "El authtoken de ngrok esta vacio." }
+if ([string]::IsNullOrWhiteSpace($NgrokToken)) { throw "The ngrok authtoken is empty." }
 & $NgrokExe config add-authtoken $NgrokToken
 $NgrokToken = $null
-if ($LASTEXITCODE -ne 0) { throw "ngrok rechazo el authtoken." }
+if ($LASTEXITCODE -ne 0) { throw "ngrok rejected the authtoken." }
 
-Write-Step "5/7 Instalando la extension del navegador"
+Write-Step "5/7 Installing the browser extension"
 $ExtensionDir | Set-Clipboard
 Start-Process explorer.exe -ArgumentList @("/select,`"$ExtensionDir\manifest.json`"")
 if ($BrowserExe) {
@@ -188,28 +188,28 @@ if ($BrowserExe) {
 } else {
     Start-Process "https://support.google.com/chrome_webstore/answer/2664769"
 }
-Write-Host "En la pagina de extensiones:" -ForegroundColor Yellow
-Write-Host "  1. Activa Modo de desarrollador."
-Write-Host "  2. Pulsa Cargar descomprimida."
-Write-Host "  3. Selecciona la carpeta copiada al portapapeles: $ExtensionDir"
-Read-Host "Pulsa Enter cuando la extension Flow Agent este instalada"
+Write-Host "On the extensions page:" -ForegroundColor Yellow
+Write-Host "  1. Enable Developer mode."
+Write-Host "  2. Click Load unpacked."
+Write-Host "  3. Select the folder copied to the clipboard: $ExtensionDir"
+Read-Host "Press Enter after the Flow Agent extension is installed"
 
-Write-Step "6/7 Seleccionando un proyecto de Google Flow"
+Write-Step "6/7 Selecting a Google Flow project"
 $FlowHome = "https://labs.google/fx/es-419/tools/flow"
 if ($BrowserExe) {
     Start-Process -FilePath $BrowserExe -ArgumentList $FlowHome
 } else {
     Start-Process $FlowHome
 }
-Write-Host "Inicia sesion, crea o abre un proyecto y copia su URL completa." -ForegroundColor Yellow
+Write-Host "Sign in, create or open a project, and copy its full URL." -ForegroundColor Yellow
 $ProjectId = $null
 while (-not $ProjectId) {
-    $ProjectInput = Read-Host "Pega la URL del proyecto de Google Flow"
+    $ProjectInput = Read-Host "Paste the Google Flow project URL"
     $ProjectId = Get-ProjectId $ProjectInput
-    if (-not $ProjectId) { Write-Host "No pude reconocer el ID del proyecto. Intentalo otra vez." -ForegroundColor Red }
+    if (-not $ProjectId) { Write-Host "The project ID was not recognized. Try again." -ForegroundColor Red }
 }
 
-Write-Step "7/7 Creando configuracion segura"
+Write-Step "7/7 Creating secure configuration"
 $ExistingApiKey = Get-DotEnvValue "SERVER_API_KEY"
 $ApiKey = if ([string]::IsNullOrWhiteSpace($ExistingApiKey)) {
     New-ApiKey
@@ -235,7 +235,7 @@ if (Test-Path -LiteralPath $InstallMarkerPath -PathType Leaf) {
     try {
         $ExistingMarker = Get-Content -LiteralPath $InstallMarkerPath -Raw | ConvertFrom-Json
     } catch {
-        Write-Warning "La marca de instalacion existente no es valida. No se reclamara propiedad de la carpeta."
+        Write-Warning "The existing installation marker is invalid. The folder will not be claimed as managed."
     }
 }
 $ManagedFlowRepository = $CreatedFlowRepository -or (
@@ -273,22 +273,22 @@ $Config = [ordered]@{
 $Config | ConvertTo-Json | Set-Content -LiteralPath $ConfigPath -Encoding utf8
 
 $Desktop = [Environment]::GetFolderPath("Desktop")
-$ShortcutPath = Join-Path $Desktop "INICIAR FLOW AGENT.lnk"
+$ShortcutPath = Join-Path $Desktop "START FLOW AGENT.lnk"
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = Join-Path $ScriptRoot "INICIAR-FLOW.cmd"
+$Shortcut.TargetPath = Join-Path $ScriptRoot "START-FLOW.cmd"
 $Shortcut.WorkingDirectory = $ScriptRoot
 $Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,137"
 $Shortcut.Save()
 
 $ApiKey | Set-Clipboard
 Write-Host ""
-Write-Host "CLAVE COPIADA AL PORTAPAPELES" -ForegroundColor Green
-Write-Host "En RunPod crea el secreto 'flow_agent_api_key' y pega ahora la clave."
-Write-Host "Despues asigna: FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}"
-Read-Host "Pulsa Enter solamente despues de guardar el secreto en RunPod"
+Write-Host "API KEY COPIED TO THE CLIPBOARD" -ForegroundColor Green
+Write-Host "Create the 'flow_agent_api_key' secret in RunPod and paste the key now."
+Write-Host "Then set: FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}"
+Read-Host "Press Enter only after saving the secret in RunPod"
 
 & (Join-Path $ScriptRoot "start-flow-local.ps1")
 Write-Host ""
-Write-Host "INSTALACION TERMINADA" -ForegroundColor Green
-Write-Host "La URL publica quedo copiada. Guardala como FLOW_AGENT_BASE_URL en RunPod."
+Write-Host "INSTALLATION COMPLETE" -ForegroundColor Green
+Write-Host "The public URL was copied. Save it as FLOW_AGENT_BASE_URL in RunPod."

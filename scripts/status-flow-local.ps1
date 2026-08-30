@@ -5,7 +5,7 @@ try {
     $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 5
     $Health | Format-List status, extension_connected, has_flow_key, transport
 } catch {
-    Write-Host "Flow Agent no responde: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Flow Agent is not responding: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 try {
@@ -17,5 +17,5 @@ try {
     )[0].public_url
     Write-Host "ngrok: $Url"
 } catch {
-    Write-Host "ngrok no responde." -ForegroundColor Red
+    Write-Host "ngrok is not responding." -ForegroundColor Red
 }
