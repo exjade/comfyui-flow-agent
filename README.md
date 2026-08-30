@@ -67,6 +67,8 @@ curl -fsSL https://raw.githubusercontent.com/exjade/comfyui-flow-agent/main/scri
 
 This command works before the repository exists on RunPod. It clones or updates the project in `/workspace/ComfyUI/custom_nodes/comfyui-flow-agent`, selects the Python executable used by ComfyUI, and installs the required packages. Save the two environment variables and restart the Pod or ComfyUI afterward.
 
+If an older RunPod installation contains local modifications, the installer preserves them in a recoverable Git stash before pulling. It never discards them. Backups can be inspected with `git -C /workspace/ComfyUI/custom_nodes/comfyui-flow-agent stash list`.
+
 Restart ComfyUI and verify registration:
 
 ```bash

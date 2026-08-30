@@ -21,6 +21,14 @@ fi
 
 mkdir -p "$CUSTOM_NODES_DIR"
 if [[ -d "$NODE_DIR/.git" ]]; then
+    if ! git -C "$NODE_DIR" diff --quiet \
+        || ! git -C "$NODE_DIR" diff --cached --quiet \
+        || [[ -n "$(git -C "$NODE_DIR" ls-files --others --exclude-standard)" ]]; then
+        BACKUP_LABEL="comfyui-flow-agent installer backup $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "Local changes detected. Saving a recoverable Git stash before updating."
+        git -C "$NODE_DIR" stash push --include-untracked -m "$BACKUP_LABEL"
+        echo "Backup created. List it later with: git -C $NODE_DIR stash list"
+    fi
     git -C "$NODE_DIR" pull --ff-only
 elif [[ -e "$NODE_DIR" ]]; then
     echo "The path exists but is not a Git repository: $NODE_DIR" >&2
