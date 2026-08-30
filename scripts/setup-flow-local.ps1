@@ -283,12 +283,30 @@ $Shortcut.Save()
 
 $ApiKey | Set-Clipboard
 Write-Host ""
-Write-Host "API KEY COPIED TO THE CLIPBOARD" -ForegroundColor Green
-Write-Host "Create the 'flow_agent_api_key' secret in RunPod and paste the key now."
-Write-Host "Then set: FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}"
-Read-Host "Press Enter only after saving the secret in RunPod"
+Write-Host "RUNPOD STEP 1 - SAVE THE PRIVATE KEY" -ForegroundColor Green
+Write-Host "The generated API key is currently in your clipboard."
+Write-Host "In RunPod Secrets, create:"
+Write-Host "  Secret name:  flow_agent_api_key"
+Write-Host "  Secret value: paste the actual key from the clipboard"
+Write-Host "Do not use the RUNPOD_SECRET expression as the secret value."
+Read-Host "Press Enter only after the secret is saved"
+
+Write-Host ""
+Write-Host "RUNPOD STEP 2 - ADD THE SECRET REFERENCE" -ForegroundColor Cyan
+Write-Host "In the Pod environment variables, add:"
+Write-Host "  Key:   FLOW_AGENT_API_KEY"
+Write-Host '  Value: {{ RUNPOD_SECRET_flow_agent_api_key }}'
+Write-Host "RunPod replaces that expression with the private value from Step 1."
+
+Write-Host ""
+Write-Host "RUNPOD STEP 3 - INSTALL THE COMFYUI NODE" -ForegroundColor Cyan
+Write-Host "Open the RunPod terminal and run:"
+Write-Host "curl -fsSL https://raw.githubusercontent.com/exjade/comfyui-flow-agent/main/scripts/INSTALL-RUNPOD.sh | bash" -ForegroundColor White
+Read-Host "Press Enter after that RunPod command finishes"
 
 & (Join-Path $ScriptRoot "start-flow-local.ps1")
 Write-Host ""
 Write-Host "INSTALLATION COMPLETE" -ForegroundColor Green
-Write-Host "The public URL was copied. Save it as FLOW_AGENT_BASE_URL in RunPod."
+Write-Host "RUNPOD STEP 4 - SAVE THE PUBLIC URL" -ForegroundColor Cyan
+Write-Host "The public URL is in your clipboard and was displayed above."
+Write-Host "Save it as FLOW_AGENT_BASE_URL, then restart the Pod or ComfyUI."

@@ -155,18 +155,28 @@ if ($Health -and $PreviousPublicUrl -eq $PublicUrl) {
         -PassThru
 }
 
+$ProjectUrl = "https://labs.google/fx/es-419/tools/flow/project/$ProjectId"
+Start-Process $ProjectUrl
+
 $Deadline = (Get-Date).AddSeconds(45)
 do {
     Start-Sleep -Milliseconds 750
     try { $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3 } catch { $Health = $null }
-} while (-not $Health -and (Get-Date) -lt $Deadline)
+    $IsReady = (
+        $Health -and
+        $Health.status -eq "healthy" -and
+        $Health.extension_connected -eq $true -and
+        $Health.has_flow_key -eq $true
+    )
+} while (-not $IsReady -and (Get-Date) -lt $Deadline)
 
 if (-not $Health) {
     throw "Flow Agent did not respond. Check $StderrLog"
 }
+if (-not $IsReady) {
+    throw "Flow Agent started, but the Chrome extension is not ready. Open the configured Flow project, confirm that the extension is ON, refresh its token, and run START-FLOW.cmd again."
+}
 
-$ProjectUrl = "https://labs.google/fx/es-419/tools/flow/project/$ProjectId"
-Start-Process $ProjectUrl
 $PublicUrl | Set-Clipboard
 
 $State = [ordered]@{
@@ -183,4 +193,12 @@ Write-Host "READY" -ForegroundColor Green
 Write-Host "URL copied to the clipboard: $PublicUrl" -ForegroundColor Cyan
 Write-Host "Project opened: $ProjectUrl"
 Write-Host "Local status: $($Health.status)"
-Write-Host "Paste the URL into FLOW_AGENT_BASE_URL on RunPod, then restart ComfyUI."
+Write-Host ""
+Write-Host "REQUIRED RUNPOD ENVIRONMENT VARIABLES" -ForegroundColor Yellow
+Write-Host "Key:   FLOW_AGENT_BASE_URL"
+Write-Host "Value: $PublicUrl"
+Write-Host ""
+Write-Host "Key:   FLOW_AGENT_API_KEY"
+Write-Host 'Value: {{ RUNPOD_SECRET_flow_agent_api_key }}'
+Write-Host ""
+Write-Host "Save both variables in the Pod settings, then restart the Pod or ComfyUI."

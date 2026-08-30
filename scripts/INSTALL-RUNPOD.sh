@@ -6,6 +6,13 @@ CUSTOM_NODES_DIR="$COMFY_DIR/custom_nodes"
 NODE_DIR="$CUSTOM_NODES_DIR/comfyui-flow-agent"
 REPOSITORY="https://github.com/exjade/comfyui-flow-agent.git"
 
+for command in git python; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "Required command not found: $command" >&2
+        exit 1
+    fi
+done
+
 if [[ ! -d "$COMFY_DIR" ]]; then
     echo "ComfyUI was not found at: $COMFY_DIR" >&2
     exit 1
@@ -38,5 +45,8 @@ Configure these Pod environment variables:
   FLOW_AGENT_BASE_URL=https://your-url.ngrok-free.dev
   FLOW_AGENT_API_KEY={{ RUNPOD_SECRET_flow_agent_api_key }}
 
-Then restart the Pod or the ComfyUI process.
+The custom node is installed at:
+  /workspace/ComfyUI/custom_nodes/comfyui-flow-agent
+
+Save both variables, then restart the Pod or the ComfyUI process.
 MESSAGE
