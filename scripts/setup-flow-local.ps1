@@ -12,6 +12,8 @@ $FlowRepoDir = Join-Path $InstallRoot "flow-agent"
 $FlowAgentDir = Join-Path $FlowRepoDir "flow-agent"
 $ExtensionDir = Join-Path $FlowRepoDir "flow-extension"
 $EnvPath = Join-Path $FlowAgentDir ".env"
+$InstallMarkerPath = Join-Path $InstallRoot ".comfyui-flow-agent-install.json"
+$CreatedFlowRepository = $false
 
 function Write-Step([string]$Text) {
     Write-Host ""
@@ -157,6 +159,7 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
 } else {
     & $GitExe clone $FlowRepository $FlowRepoDir
     if ($LASTEXITCODE -ne 0) { throw "No se pudo clonar Flow Agent." }
+    $CreatedFlowRepository = $true
 }
 
 Write-Step "3/7 Preparando Python y dependencias"
@@ -227,10 +230,45 @@ foreach ($Setting in $Settings.GetEnumerator()) {
     Set-DotEnvValue $Setting.Key $Setting.Value
 }
 
+$ExistingMarker = $null
+if (Test-Path -LiteralPath $InstallMarkerPath -PathType Leaf) {
+    try {
+        $ExistingMarker = Get-Content -LiteralPath $InstallMarkerPath -Raw | ConvertFrom-Json
+    } catch {
+        Write-Warning "La marca de instalacion existente no es valida. No se reclamara propiedad de la carpeta."
+    }
+}
+$ManagedFlowRepository = $CreatedFlowRepository -or (
+    $ExistingMarker -and
+    $ExistingMarker.install_id -and
+    ([string]$ExistingMarker.flow_repo_dir -eq $FlowRepoDir)
+)
+$InstallId = if ($ManagedFlowRepository -and $ExistingMarker.install_id) {
+    [string]$ExistingMarker.install_id
+} elseif ($CreatedFlowRepository) {
+    [guid]::NewGuid().ToString("D")
+} else {
+    ""
+}
+if ($CreatedFlowRepository) {
+    $Marker = [ordered]@{
+        install_id = $InstallId
+        flow_repo_dir = $FlowRepoDir
+        created_at = (Get-Date).ToString("o")
+        created_by = "comfyui-flow-agent"
+    }
+    $Marker | ConvertTo-Json | Set-Content -LiteralPath $InstallMarkerPath -Encoding utf8
+}
+
 $Config = [ordered]@{
     flow_agent_dir = $FlowAgentDir
     ngrok_exe = $NgrokExe
     port = $Port
+    install_root = $InstallRoot
+    flow_repo_dir = $FlowRepoDir
+    install_marker = $InstallMarkerPath
+    install_id = $InstallId
+    managed_flow_repository = [bool]$ManagedFlowRepository
 }
 $Config | ConvertTo-Json | Set-Content -LiteralPath $ConfigPath -Encoding utf8
 

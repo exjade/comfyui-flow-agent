@@ -178,6 +178,20 @@ Estado y apagado:
 .\scripts\stop-flow-local.ps1
 ```
 
+### Desinstalacion local segura
+
+Haz doble clic en:
+
+```text
+scripts\DESINSTALAR-FLOW.cmd
+```
+
+El desinstalador exige escribir `DESINSTALAR` y solo borra la copia de Flow Agent cuando una marca privada demuestra que fue creada por este instalador. Dentro de esa copia se eliminan su `.env`, el `.venv` privado, cache, salidas locales del backend, logs y estado. Tambien elimina la configuracion privada y el acceso directo que apunta a este proyecto.
+
+No desinstala ni modifica Python de Windows, entornos virtuales externos, paquetes o caches compartidas, Google Chrome, perfiles, historial, cookies, configuracion de extensiones, proyectos de Google Flow, Git, uv, ngrok, credenciales compartidas de ngrok, ComfyUI, modelos, workflows ni archivos generados por ComfyUI. La entrada de la extension desempaquetada se conserva en el navegador; el usuario puede quitarla manualmente si lo desea.
+
+Las instalaciones manuales o anteriores que no tengan una marca verificable se conservan completas. Esto evita borrar una carpeta que el usuario haya creado o reutilizado por su cuenta.
+
 Si Flow Agent está en otra carpeta:
 
 ```powershell
