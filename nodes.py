@@ -89,6 +89,86 @@ def _upload_image_sources(client, sources, *, started, timeout_seconds, max_imag
     return media_ids
 
 
+CHARACTER_REFERENCE_ROLES = (
+    ("character", "reference_image", "identity, face, hair, and body proportions"),
+    ("top", "top_reference", "the exact top garment, including color and details"),
+    ("bottom", "bottom_reference", "the exact bottom garment, including color and details"),
+    ("accessories", "accessories_reference", "the accessories to preserve"),
+    ("shoes", "shoes_reference", "the exact shoes to preserve"),
+)
+
+
+def _upload_character_references(
+    client,
+    reference_image,
+    *,
+    started,
+    timeout_seconds,
+    top_reference=None,
+    bottom_reference=None,
+    accessories_reference=None,
+    shoes_reference=None,
+):
+    """Upload at most ten ordered references and retain their semantic roles."""
+
+    sources = {
+        "reference_image": reference_image,
+        "top_reference": top_reference,
+        "bottom_reference": bottom_reference,
+        "accessories_reference": accessories_reference,
+        "shoes_reference": shoes_reference,
+    }
+    references: list[dict[str, Any]] = []
+    for role, field_name, instruction in CHARACTER_REFERENCE_ROLES:
+        source = sources[field_name]
+        if source is None:
+            continue
+        remaining_slots = MAX_REFERENCE_IMAGES - len(references)
+        if remaining_slots <= 0:
+            raise FlowAgentError(
+                f"Flow Agent accepts at most {MAX_REFERENCE_IMAGES} total reference images."
+            )
+        uploaded_ids = _upload_image_batch(
+            client,
+            source,
+            started=started,
+            timeout_seconds=timeout_seconds,
+            max_images=remaining_slots,
+        )
+        for role_index, media_id in enumerate(uploaded_ids, start=1):
+            references.append(
+                {
+                    "reference_index": len(references) + 1,
+                    "role": role,
+                    "role_index": role_index,
+                    "instruction": instruction,
+                    "media_id": media_id,
+                }
+            )
+
+    character_references = [item for item in references if item["role"] == "character"]
+    if len(character_references) != 1:
+        raise FlowAgentError(
+            "Character Creator requires exactly one character reference image. "
+            "Wardrobe inputs may contain additional images, up to 10 references total."
+        )
+    return references
+
+
+def _character_reference_prompt(references: list[dict[str, Any]]) -> str:
+    if len(references) <= 1:
+        return ""
+    assignments = "; ".join(
+        f"reference image {item['reference_index']} defines {item['instruction']}"
+        for item in references
+    )
+    return (
+        f"Use the ordered reference images as follows: {assignments}. "
+        "Do not mix garment roles. Preserve the character identity and the specified outfit "
+        "consistently in every shot."
+    )
+
+
 def _comfy_output_directory() -> str:
     try:
         import folder_paths
@@ -376,6 +456,11 @@ class FlowCharacterCreator:
                         "placeholder": "One custom shot prompt per line",
                     },
                 ),
+                "aspect_ratio": (tuple(ASPECT_TO_SIZE), {"default": "square (1:1)"}),
+                "top_reference": ("IMAGE",),
+                "bottom_reference": ("IMAGE",),
+                "accessories_reference": ("IMAGE",),
+                "shoes_reference": ("IMAGE",),
             },
         }
 
@@ -392,8 +477,9 @@ class FlowCharacterCreator:
     CATEGORY = "Flow Agent / Character"
     OUTPUT_NODE = True
     DESCRIPTION = (
-        "Generate a labeled, previewable character dataset from one reference image. "
-        "Includes the 22-shot Character Persona preset and custom shot lists."
+        "Generate a labeled, previewable character dataset from one identity image and "
+        "optional top, bottom, accessories, and shoes references. Includes the 22-shot "
+        "Character Persona preset and custom shot lists."
     )
 
     @classmethod
@@ -414,22 +500,31 @@ class FlowCharacterCreator:
         preview_columns,
         dataset_name,
         custom_shots="",
+        aspect_ratio="square (1:1)",
+        top_reference=None,
+        bottom_reference=None,
+        accessories_reference=None,
+        shoes_reference=None,
     ):
         shots = resolve_character_shots(shot_preset, custom_shots, shot_count)
         dataset_id = _new_dataset_id(dataset_name)
         client = FlowAgentClient.from_env()
         client.assert_ready(timeout_seconds=min(15.0, float(timeout_per_image)))
         upload_started = time.monotonic()
-        reference_ids = _upload_image_batch(
+        references = _upload_character_references(
             client,
             reference_image,
             started=upload_started,
             timeout_seconds=timeout_per_image,
-            max_images=1,
+            top_reference=top_reference,
+            bottom_reference=bottom_reference,
+            accessories_reference=accessories_reference,
+            shoes_reference=shoes_reference,
         )
-        if len(reference_ids) != 1:
-            raise FlowAgentError("Character Creator requires exactly one reference image.")
-        reference_media_id = reference_ids[0]
+        reference_ids = [item["media_id"] for item in references]
+        reference_prompt = _character_reference_prompt(references)
+        if aspect_ratio not in ASPECT_TO_SIZE:
+            raise FlowAgentError(f"Unsupported character aspect ratio: {aspect_ratio}.")
 
         records: list[dict[str, Any]] = []
         tensors, previews, media_ids, source_urls, saved_paths = [], [], [], [], []
@@ -438,6 +533,8 @@ class FlowCharacterCreator:
                 shot.prompt_fragment,
                 subject_description,
             )
+            if reference_prompt:
+                full_prompt = f"{full_prompt}. {reference_prompt}"
             record: dict[str, Any] = {
                 "shot_number": shot_number,
                 **shot.to_dict(),
@@ -455,7 +552,7 @@ class FlowCharacterCreator:
                     item = client.generate_images(
                         prompt=full_prompt,
                         model=model,
-                        size="1024x1024",
+                        size=ASPECT_TO_SIZE[aspect_ratio],
                         count=1,
                         seed=seed,
                         ref_media_ids=[reference_media_id],
@@ -528,8 +625,11 @@ class FlowCharacterCreator:
             "failed_shots": len(shots) - len(tensors),
             "subject_description": subject_description.strip(),
             "model": model,
-            "aspect_ratio": "1:1",
-            "reference_media_id": reference_media_id,
+            "aspect_ratio": aspect_ratio,
+            "requested_size": ASPECT_TO_SIZE[aspect_ratio],
+            "reference_media_id": reference_ids[0],
+            "reference_media_ids": reference_ids,
+            "references": references,
             "contact_sheet_path": contact_path,
             "source_urls": source_urls,
             "shots": records,
@@ -617,6 +717,8 @@ class FlowCharacterShotSelector:
             "dataset_id": manifest.get("dataset_id", ""),
             "subject_description": manifest.get("subject_description", ""),
             "model": manifest.get("model", "gem_pix_2"),
+            "aspect_ratio": manifest.get("aspect_ratio", "square (1:1)"),
+            "references": manifest.get("references", []),
             "shot_number": record["shot_number"],
             "shot_id": record["shot_id"],
             "group": record.get("group", ""),
@@ -661,6 +763,15 @@ class FlowGenerateCharacterShot:
             },
             "optional": {
                 "previous_media_id": ("STRING", {"default": ""}),
+                "reuse_manifest_references": ("BOOLEAN", {"default": True}),
+                "aspect_ratio": (
+                    ("use dataset setting", *tuple(ASPECT_TO_SIZE)),
+                    {"default": "use dataset setting"},
+                ),
+                "top_reference": ("IMAGE",),
+                "bottom_reference": ("IMAGE",),
+                "accessories_reference": ("IMAGE",),
+                "shoes_reference": ("IMAGE",),
             },
         }
 
@@ -686,6 +797,12 @@ class FlowGenerateCharacterShot:
         retry_count,
         timeout_seconds,
         previous_media_id="",
+        reuse_manifest_references=True,
+        aspect_ratio="use dataset setting",
+        top_reference=None,
+        bottom_reference=None,
+        accessories_reference=None,
+        shoes_reference=None,
     ):
         spec = _parse_json_object(shot_spec_json, "shot_spec_json")
         shot_id = str(spec.get("shot_id") or "").strip()
@@ -697,16 +814,47 @@ class FlowGenerateCharacterShot:
 
         client = FlowAgentClient.from_env()
         client.assert_ready(timeout_seconds=min(15.0, float(timeout_seconds)))
-        upload_started = time.monotonic()
-        reference_ids = _upload_image_batch(
-            client,
-            reference_image,
-            started=upload_started,
-            timeout_seconds=timeout_seconds,
-            max_images=1,
+        saved_references = spec.get("references")
+        can_reuse = bool(
+            reuse_manifest_references
+            and isinstance(saved_references, list)
+            and saved_references
+            and all(
+                isinstance(item, dict) and str(item.get("media_id") or "").strip()
+                for item in saved_references
+            )
+            and all(
+                source is None
+                for source in (
+                    top_reference,
+                    bottom_reference,
+                    accessories_reference,
+                    shoes_reference,
+                )
+            )
         )
-        if len(reference_ids) != 1:
-            raise FlowAgentError("Generate Character Shot requires exactly one reference image.")
+        if can_reuse:
+            references = saved_references
+        else:
+            upload_started = time.monotonic()
+            references = _upload_character_references(
+                client,
+                reference_image,
+                started=upload_started,
+                timeout_seconds=timeout_seconds,
+                top_reference=top_reference,
+                bottom_reference=bottom_reference,
+                accessories_reference=accessories_reference,
+                shoes_reference=shoes_reference,
+            )
+        reference_ids = [str(item["media_id"]) for item in references]
+        selected_aspect = (
+            str(spec.get("aspect_ratio") or "square (1:1)")
+            if aspect_ratio == "use dataset setting"
+            else aspect_ratio
+        )
+        if selected_aspect not in ASPECT_TO_SIZE:
+            raise FlowAgentError(f"Unsupported character aspect ratio: {selected_aspect}.")
 
         regeneration_id = uuid.uuid4().hex[:8]
         idempotency_key = f"comfyui-character-regen-{dataset_id}-{shot_id}-{regeneration_id}"
@@ -718,7 +866,7 @@ class FlowGenerateCharacterShot:
                 item = client.generate_images(
                     prompt=full_prompt,
                     model=model,
-                    size="1024x1024",
+                    size=ASPECT_TO_SIZE[selected_aspect],
                     count=1,
                     seed=seed,
                     ref_media_ids=reference_ids,
@@ -750,6 +898,8 @@ class FlowGenerateCharacterShot:
             "seed": seed,
             "media_id": media_id,
             "source_url": item.get("url"),
+            "aspect_ratio": selected_aspect,
+            "references": references,
             "saved_path": saved_path,
             "preview": preview,
             "replaces_media_id": replaced_media_id,

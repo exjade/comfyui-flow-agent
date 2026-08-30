@@ -127,7 +127,7 @@ class FakeCharacterClient:
 
     def upload_image(self, data_uri, timeout_seconds):
         type(self).uploaded.append(data_uri)
-        return "reference-character"
+        return f"reference-{len(type(self).uploaded)}"
 
     def generate_images(self, **kwargs):
         type(self).generation_calls.append(kwargs)
@@ -181,12 +181,54 @@ def test_character_creator_previews_every_result_and_builds_manifest(monkeypatch
     assert len(FakeCharacterClient.uploaded) == 1
     assert len(FakeCharacterClient.generation_calls) == 2
     assert FakeCharacterClient.generation_calls[0]["ref_media_ids"] == [
-        "reference-character"
+        "reference-1"
     ]
     assert (
         FakeCharacterClient.generation_calls[0]["idempotency_key"]
         != FakeCharacterClient.generation_calls[1]["idempotency_key"]
     )
+
+
+def test_character_creator_labels_outfit_references_and_respects_aspect(monkeypatch, tmp_path):
+    FakeCharacterClient.uploaded = []
+    FakeCharacterClient.generation_calls = []
+    monkeypatch.setattr(nodes, "FlowAgentClient", FakeCharacterClient)
+    monkeypatch.setattr(nodes, "_comfy_output_directory", lambda: str(tmp_path))
+
+    response = nodes.FlowCharacterCreator().generate_dataset(
+        reference_image=torch.zeros((1, 4, 4, 3)),
+        subject_description="A fashion model",
+        shot_preset="body shots 8",
+        shot_count=1,
+        model="gem_pix_2",
+        seed=43,
+        retry_count=0,
+        continue_on_error=False,
+        timeout_per_image=600,
+        preview_columns=1,
+        dataset_name="Wardrobe Test",
+        aspect_ratio="landscape (16:9)",
+        top_reference=torch.zeros((2, 4, 4, 3)),
+        bottom_reference=torch.zeros((1, 4, 4, 3)),
+        accessories_reference=torch.zeros((1, 4, 4, 3)),
+        shoes_reference=torch.zeros((1, 4, 4, 3)),
+    )
+
+    manifest = json.loads(response["result"][2])
+    call = FakeCharacterClient.generation_calls[0]
+    assert call["size"] == "1792x1024"
+    assert call["ref_media_ids"] == [f"reference-{index}" for index in range(1, 7)]
+    assert [item["role"] for item in manifest["references"]] == [
+        "character",
+        "top",
+        "top",
+        "bottom",
+        "accessories",
+        "shoes",
+    ]
+    assert "reference image 2 defines the exact top garment" in call["prompt"]
+    assert "reference image 6 defines the exact shoes" in call["prompt"]
+    assert manifest["requested_size"] == "1792x1024"
 
 
 def test_character_selector_and_regenerator_use_stable_shot_identity(monkeypatch, tmp_path):

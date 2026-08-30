@@ -7,6 +7,8 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $LauncherRoot = Split-Path -Parent $ScriptRoot
+$RepositoryRoot = Split-Path -Parent $LauncherRoot
+$BackendPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-media-reuse.patch"
 $DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
 $ConfigPath = Join-Path $DataRoot "flow-local.config.json"
 $FlowRepository = "https://github.com/kodelyx/flow-agent.git"
@@ -32,6 +34,29 @@ function Find-CommandPath([string]$Name) {
     $Command = Get-Command $Name -ErrorAction SilentlyContinue
     if ($Command) { return $Command.Source }
     return $null
+}
+
+function Test-BackendPatchApplied([string]$GitExe) {
+    if (-not (Test-Path -LiteralPath $BackendPatchPath -PathType Leaf)) { return $false }
+    & $GitExe -C $FlowAgentDir apply --reverse --check --unidiff-zero $BackendPatchPath 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
+function Apply-BackendPatch([string]$GitExe) {
+    if (-not (Test-Path -LiteralPath $BackendPatchPath -PathType Leaf)) {
+        throw "Required Flow Agent compatibility patch is missing: $BackendPatchPath"
+    }
+    if (Test-BackendPatchApplied $GitExe) {
+        Write-Host "Flow Agent media reuse fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowAgentDir apply --check --unidiff-zero $BackendPatchPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "The installed Flow Agent version is not compatible with the media reuse fix. Update comfyui-flow-agent and retry."
+    }
+    & $GitExe -C $FlowAgentDir apply --unidiff-zero $BackendPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "The Flow Agent media reuse fix could not be installed." }
+    Write-Host "Installed Flow Agent media reuse fix." -ForegroundColor Green
 }
 
 function Install-WingetPackage(
@@ -154,8 +179,16 @@ if (-not $BrowserExe) {
 Write-Step "2/7 Downloading Flow Agent"
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
+    $RestoreBackendPatch = Test-BackendPatchApplied $GitExe
+    if ($RestoreBackendPatch) {
+        & $GitExe -C $FlowAgentDir apply --reverse --unidiff-zero $BackendPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent media reuse fix could not be prepared for update." }
+    }
     & $GitExe -C $FlowRepoDir pull --ff-only
-    if ($LASTEXITCODE -ne 0) { throw "Flow Agent could not be updated." }
+    if ($LASTEXITCODE -ne 0) {
+        if ($RestoreBackendPatch) { Apply-BackendPatch $GitExe }
+        throw "Flow Agent could not be updated."
+    }
 } elseif (Test-Path -LiteralPath $FlowRepoDir) {
     throw "'$FlowRepoDir' exists but is not a Git repository. Move it or choose another InstallRoot."
 } else {
@@ -163,6 +196,7 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
     if ($LASTEXITCODE -ne 0) { throw "Flow Agent could not be cloned." }
     $CreatedFlowRepository = $true
 }
+Apply-BackendPatch $GitExe
 
 Write-Step "3/7 Preparing the isolated runtime and dependencies"
 Push-Location $FlowAgentDir
@@ -228,6 +262,7 @@ $Settings = [ordered]@{
     DEFAULT_PROJECT = $ProjectId
     MAX_CONCURRENT_REQUESTS = "5"
     REQUEST_MIN_INTERVAL = "3"
+    MEDIA_ID_VALIDATION_TTL_SECONDS = "21600"
 }
 foreach ($Setting in $Settings.GetEnumerator()) {
     Set-DotEnvValue $Setting.Key $Setting.Value

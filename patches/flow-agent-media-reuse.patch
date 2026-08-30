@@ -1,0 +1,185 @@
+diff --git a/flow_server/history.py b/flow_server/history.py
+--- a/flow_server/history.py
++++ b/flow_server/history.py
+@@ -114,6 +114,26 @@ def _clean_string(value: Any) -> str | None:
+     return text or None
+ 
+ 
++def _clean_media_id_aliases(value: Any, *, current: str | None = None) -> list[str]:
++    """Return unique legacy media IDs, excluding the current ID."""
++
++    values = value if isinstance(value, (list, tuple, set)) else []
++    aliases: list[str] = []
++    for raw in values:
++        alias = _clean_string(raw)
++        if alias and alias != current and alias not in aliases:
++            aliases.append(alias)
++    return aliases
++
++
++def _media_ids(entry: Mapping[str, Any]) -> set[str]:
++    current = _clean_string(entry.get("media_id"))
++    ids = set(_clean_media_id_aliases(entry.get("media_id_aliases"), current=current))
++    if current:
++        ids.add(current)
++    return ids
++
++
+ def _empty_document() -> dict[str, Any]:
+     return {"version": HISTORY_VERSION, "history": [], "migrations": {}}
+ 
+@@ -128,6 +148,13 @@ def _normalise_entry(value: Any) -> dict[str, Any] | None:
+     media_id = _clean_string(entry.get("media_id"))
+     if media_id:
+         entry["media_id"] = media_id
++        aliases = _clean_media_id_aliases(
++            entry.get("media_id_aliases"), current=media_id
++        )
++        if aliases:
++            entry["media_id_aliases"] = aliases
++        else:
++            entry.pop("media_id_aliases", None)
+         # Mappings use the same complete shape as generated records so API and
+         # MCP consumers never need to special-case cache-only entries.
+         filename = filename or safe_filename(media_id) or media_id
+@@ -144,4 +171,18 @@ def _normalise_entry(value: Any) -> dict[str, Any] | None:
+ def _merge_entries(old: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, Any]:
+     merged = dict(old)
+     for key, value in new.items():
++        if key == "media_id_aliases":
++            current = _clean_string(new.get("media_id") or merged.get("media_id"))
++            combined = _clean_media_id_aliases(
++                [
++                    *(_clean_media_id_aliases(merged.get(key))),
++                    *(_clean_media_id_aliases(value)),
++                ],
++                current=current,
++            )
++            if combined:
++                merged[key] = combined
++            else:
++                merged.pop(key, None)
++            continue
+         # A thin user-facing history append must not erase upload-cache fields
+@@ -176,4 +217,4 @@ def _deduplicate(entries: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+             continue
+         filename = derive_filename(entry)
+         filename_key = os.path.normcase(filename) if filename else None
+-        media_id = _clean_string(entry.get("media_id"))
++        media_ids = _media_ids(entry)
+@@ -186,3 +227,1 @@ def _deduplicate(entries: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+-            same_media_id = bool(
+-                media_id and _clean_string(existing.get("media_id")) == media_id
+-            )
++            same_media_id = bool(media_ids.intersection(_media_ids(existing)))
+@@ -422,2 +461,3 @@ class HistoryRegistry:
+         filename = derive_filename(new_entry)
+         media_id = _clean_string(new_entry.get("media_id"))
++        media_ids = _media_ids(new_entry)
+@@ -438,3 +478,1 @@ class HistoryRegistry:
+-                same_media_id = bool(
+-                    media_id and _clean_string(existing.get("media_id")) == media_id
+-                )
++                same_media_id = bool(media_ids.intersection(_media_ids(existing)))
+@@ -486,1 +524,1 @@ class HistoryRegistry:
+-            if clean_media_id is not None and _clean_string(entry.get("media_id")) != clean_media_id:
++            if clean_media_id is not None and clean_media_id not in _media_ids(entry):
+@@ -517,1 +555,1 @@ class HistoryRegistry:
+-                if media_id is not None and _clean_string(entry.get("media_id")) != media_id:
++                if media_id is not None and media_id not in _media_ids(entry):
+diff --git a/flow_server/media_history.py b/flow_server/media_history.py
+--- a/flow_server/media_history.py
++++ b/flow_server/media_history.py
+@@ -21,4 +21,24 @@ from flow_server.media_types import extension_for_media, sniff_media_type
+ OUTPUT_DIR: str | None = None
+ 
+ 
++def _validation_ttl_seconds() -> int:
++    """How long a just-confirmed Flow media ID is trusted without a GET probe."""
++
++    try:
++        return max(0, int(os.environ.get("MEDIA_ID_VALIDATION_TTL_SECONDS", "21600")))
++    except (TypeError, ValueError):
++        return 21600
++
++
++def _validation_is_fresh(record: dict) -> bool:
++    try:
++        validated_at = int(record.get("validated_at") or 0)
++    except (TypeError, ValueError):
++        return False
++    return bool(
++        validated_at
++        and (int(time.time()) - validated_at) <= _validation_ttl_seconds()
++    )
++
++
+ def _history_api():
+@@ -102,1 +122,1 @@ def record_uploaded_media(
+-    return record_local_media(
++    record = record_local_media(
+@@ -111,2 +131,5 @@ def record_uploaded_media(
+         source="upload",
+     )
++    refreshed = dict(record)
++    refreshed["validated_at"] = int(time.time())
++    return _history_api().upsert_history(refreshed)
+@@ -300,1 +323,3 @@ async def get_revalidated_upload_id(
+     media_id = str(record["media_id"])
++    if _validation_is_fresh(record):
++        return media_id
+@@ -371,1 +396,3 @@ async def resolve_media_reference(
+     if media_id:
++        if _validation_is_fresh(record):
++            return str(media_id)
+@@ -406,4 +433,8 @@ async def resolve_media_reference(
+     refreshed = dict(record)
++    aliases = list(refreshed.get("media_id_aliases") or [])
++    if media_id and str(media_id) != refreshed_media_id and str(media_id) not in aliases:
++        aliases.append(str(media_id))
+     refreshed.update(
+         media_id=refreshed_media_id,
++        media_id_aliases=aliases,
+         project_id=upload_project,
+diff --git a/flow_server/routes/media.py b/flow_server/routes/media.py
+--- a/flow_server/routes/media.py
++++ b/flow_server/routes/media.py
+@@ -25,2 +25,3 @@ from flow_server.history import (
+ )
+ from flow_server.media_types import extension_for_mime, sniff_media_type
++from flow_server.media_history import find_uploaded_file
+@@ -80,3 +81,7 @@ async def upload_file_endpoint(req: UploadRequest):
+         with open(temp_path, "wb") as f:
+             f.write(media_bytes)
+ 
++        cached_image = None if is_video_input else find_uploaded_file(
++            temp_path, project_id=project_id
++        )
++
+@@ -94,4 +99,26 @@ async def upload_file_endpoint(req: UploadRequest):
+             if not media_id:
+                 raise HTTPException(status_code=500, detail="Failed to upload image reference to Google Flow.")
+ 
++            # ``upload_image`` archives image bytes by SHA-256 and records the
++            # reusable Flow ID.  Return that stable managed asset instead of
++            # publishing another random upload_* file on every ComfyUI run.
++            managed = find_uploaded_file(temp_path, project_id=project_id)
++            if managed and str(managed.get("media_id")) == str(media_id):
++                managed_name = derive_filename(managed)
++                managed_url = (
++                    public_url(managed_name)
++                    if managed_name
++                    else str(managed.get("url") or "")
++                )
++                if os.path.exists(temp_path):
++                    os.remove(temp_path)
++                return {
++                    "media_id": str(media_id),
++                    "url": managed_url,
++                    "reused": bool(
++                        cached_image
++                        and str(cached_image.get("media_id")) == str(media_id)
++                    ),
++                }
++
+         # Make the file web-accessible (R2 if configured, else local /download)

@@ -95,7 +95,13 @@ Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline pr
 
 ## Character datasets
 
-`Flow / Custom Character Creator` reproduces the community Character Persona workflow with 22 stable shots: eight face angles, six expressions, and eight body poses. It uploads one reference image once, then generates the requested number of shots sequentially with Nano Banana. Custom mode accepts one shot prompt per line and supports up to 102 shots.
+`Flow / Custom Character Creator` reproduces the community Character Persona workflow with 22 stable shots: eight face angles, six expressions, and eight body poses. It accepts one identity image plus optional `top_reference`, `bottom_reference`, `accessories_reference`, and `shoes_reference` inputs. Each wardrobe input may be a small IMAGE batch, with a hard combined limit of 10 references. The node sends Flow's real ordered `ref_media_ids` list and adds explicit role assignments to each shot prompt; the upstream API has no separate top/bottom/shoes fields.
+
+Reference uploads are content-addressed. Re-running with identical image bytes and the same Flow project reuses the stored `media_id` instead of creating another Flow upload or random local `upload_*` file. A changed image or project creates a new upload. The compatibility patch installed by the Windows setup also preserves old media-ID aliases when Flow refreshes an ID, preventing the first-shot-only failure in long character batches.
+
+`aspect_ratio` supports 1:1, 16:9, 9:16, 4:3, and 3:4. The current Flow Agent image contract uses the supplied `size` only to select one of those aspect-ratio enums; it does not expose native image resolution or image upsampling. Values such as `1792x1024` therefore do not prove a 1792-pixel Flow result. Use a separate ComfyUI upscale workflow when pixels above Flow's native output are required.
+
+Flow's own `@` picker can select a different project and then choose a character such as `stacy`, so cross-project character reuse is available in the Google UI. Plain text such as `@stacy` is not yet an equivalent character reference in this integration: the UI chip contains project/character metadata, while the repository currently sends only prompt text plus image `media_id` values. Add the character's source images through the reference inputs until a captured and tested character-entity request contract is implemented.
 
 Every successful image is saved immediately under `ComfyUI/output/flow_agent/characters/<dataset_id>`. The node shows a contact sheet plus every individual result in ComfyUI, and returns an IMAGE batch and a JSON manifest. Each manifest entry has a stable `shot_id`, the generated Flow `media_id`, its full prompt, saved path, status, and batch index. Partial results remain available when `continue_on_error` is enabled.
 
@@ -103,7 +109,7 @@ To regenerate one result without rebuilding the complete dataset:
 
 1. Connect `images` and `manifest_json` to `Flow / Select Character Shot`.
 2. Choose its `shot_number` and inspect the individual preview.
-3. Connect `shot_spec_json` to `Flow / Generate Character Shot` and reconnect the original reference image.
+3. Connect `shot_spec_json` to `Flow / Generate Character Shot`. With `reuse_manifest_references=true`, the node reuses the exact reference IDs recorded by the dataset; connect new wardrobe inputs only when replacing the outfit.
 
 `shot_id` identifies the logical pose and remains stable. `media_id` identifies one concrete Google Flow result and changes after regeneration. Retries reuse one idempotency key per shot so a transient retry does not intentionally create duplicate paid generations.
 
@@ -159,6 +165,7 @@ The uninstaller never removes or modifies Windows Python, external environments,
 ## Reference media
 
 - `Flow / Nano Banana`: use `reference_image` and `reference_image_2` through `reference_image_10`. The combined maximum is 10.
+- `Flow / Custom Character Creator`: one identity image plus labeled top, bottom, accessories, and shoes references, combined maximum 10. Identical bytes are reused by fingerprint.
 - `Flow / Omni Flash Video` modes:
   - `start image to video` requires `start_image`.
   - `first + last frame` requires `start_image` and `end_image`.
