@@ -9,6 +9,7 @@ from PIL import Image
 from comfyui_flow_agent_under_test.flow_agent_client import FlowAgentError
 from comfyui_flow_agent_under_test.image_utils import (
     image_bytes_to_tensor,
+    make_contact_sheet,
     stack_image_tensors,
     tensor_batch_to_png_data_uris,
 )
@@ -45,3 +46,15 @@ def test_mismatched_generated_sizes_fail_clearly():
         stack_image_tensors(
             [torch.zeros((1, 4, 4, 3)), torch.zeros((1, 5, 4, 3))]
         )
+
+
+def test_contact_sheet_contains_every_batch_image():
+    batch = torch.zeros((5, 2, 3, 3), dtype=torch.float32)
+    for index in range(5):
+        batch[index, :, :, :] = (index + 1) / 5
+
+    sheet = make_contact_sheet(batch, columns=3, padding=1)
+
+    assert tuple(sheet.shape) == (1, 7, 13, 3)
+    assert torch.allclose(sheet[0, 1:3, 1:4, :], batch[0])
+    assert torch.allclose(sheet[0, 4:6, 1:4, :], batch[3])

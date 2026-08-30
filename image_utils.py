@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 from typing import Iterable
 
 import numpy as np
@@ -72,3 +73,50 @@ def stack_image_tensors(images: Iterable[torch.Tensor]) -> torch.Tensor:
             f"{sorted(shapes)}. Generate them in separate executions."
         )
     return torch.cat(tensors, dim=0)
+
+
+def make_contact_sheet(
+    image_batch,
+    columns: int = 4,
+    padding: int = 8,
+    max_tile_size: int = 256,
+) -> torch.Tensor:
+    """Arrange a ComfyUI IMAGE batch into one preview-friendly contact sheet."""
+    if hasattr(image_batch, "detach"):
+        batch = image_batch.detach().cpu()
+    else:
+        batch = torch.as_tensor(image_batch)
+    if batch.ndim == 3:
+        batch = batch.unsqueeze(0)
+    if batch.ndim != 4 or batch.shape[0] < 1:
+        raise FlowAgentError(
+            f"Contact sheet requires a non-empty [B,H,W,C] IMAGE batch; received {tuple(batch.shape)}."
+        )
+    _, height, width, _ = batch.shape
+    longest_side = max(int(height), int(width))
+    if longest_side > max_tile_size:
+        scale = max_tile_size / longest_side
+        target_height = max(1, round(int(height) * scale))
+        target_width = max(1, round(int(width) * scale))
+        batch = torch.nn.functional.interpolate(
+            batch.permute(0, 3, 1, 2),
+            size=(target_height, target_width),
+            mode="bilinear",
+            align_corners=False,
+        ).permute(0, 2, 3, 1)
+    columns = max(1, min(int(columns), int(batch.shape[0])))
+    rows = math.ceil(int(batch.shape[0]) / columns)
+    _, height, width, channels = batch.shape
+    sheet_height = rows * height + (rows + 1) * padding
+    sheet_width = columns * width + (columns + 1) * padding
+    sheet = torch.full(
+        (1, sheet_height, sheet_width, channels),
+        0.08,
+        dtype=batch.dtype,
+    )
+    for index, image in enumerate(batch):
+        row, column = divmod(index, columns)
+        top = padding + row * (height + padding)
+        left = padding + column * (width + padding)
+        sheet[0, top : top + height, left : left + width, :] = image
+    return sheet

@@ -9,6 +9,9 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 | Node | Purpose |
 |---|---|
 | `Flow / Nano Banana` | Generate images from text, ingredients, or references |
+| `Flow / Custom Character Creator` | Generate a labeled character dataset with inline previews |
+| `Flow / Select Character Shot` | Select and preview one generated dataset shot |
+| `Flow / Generate Character Shot` | Regenerate one selected shot without rebuilding the dataset |
 | `Flow / Omni Flash Video` | Generate or edit video from text, frames, or ingredients |
 | `Flow / Upload Media` | Upload an image or video and return a reusable `media_id` |
 | `Flow / Upsample Video` | Upsample generated video to 1080p or 4K |
@@ -74,13 +77,35 @@ Restart ComfyUI and verify registration:
 ```bash
 python - <<'PY'
 import requests
-for node in ("FlowNanoBanana", "FlowOmniFlashVideo", "FlowUploadMedia", "FlowVideoUpsample"):
+for node in (
+    "FlowNanoBanana",
+    "FlowCharacterCreator",
+    "FlowCharacterShotSelector",
+    "FlowGenerateCharacterShot",
+    "FlowOmniFlashVideo",
+    "FlowUploadMedia",
+    "FlowVideoUpsample",
+):
     response = requests.get(f"http://127.0.0.1:8188/object_info/{node}", timeout=15)
     print(node, response.status_code, list(response.json()))
 PY
 ```
 
 Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline preview, native `VIDEO`, Video Helper Suite-compatible `VHS_FILENAMES`, paths, media IDs, source URLs, and job JSON. `source_video_path` must point to a RunPod file, not a Windows path.
+
+## Character datasets
+
+`Flow / Custom Character Creator` reproduces the community Character Persona workflow with 22 stable shots: eight face angles, six expressions, and eight body poses. It uploads one reference image once, then generates the requested number of shots sequentially with Nano Banana. Custom mode accepts one shot prompt per line and supports up to 102 shots.
+
+Every successful image is saved immediately under `ComfyUI/output/flow_agent/characters/<dataset_id>`. The node shows a contact sheet plus every individual result in ComfyUI, and returns an IMAGE batch and a JSON manifest. Each manifest entry has a stable `shot_id`, the generated Flow `media_id`, its full prompt, saved path, status, and batch index. Partial results remain available when `continue_on_error` is enabled.
+
+To regenerate one result without rebuilding the complete dataset:
+
+1. Connect `images` and `manifest_json` to `Flow / Select Character Shot`.
+2. Choose its `shot_number` and inspect the individual preview.
+3. Connect `shot_spec_json` to `Flow / Generate Character Shot` and reconnect the original reference image.
+
+`shot_id` identifies the logical pose and remains stable. `media_id` identifies one concrete Google Flow result and changes after regeneration. Retries reuse one idempotency key per shot so a transient retry does not intentionally create duplicate paid generations.
 
 ## Guided Windows setup
 
