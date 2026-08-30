@@ -13,21 +13,30 @@ if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     $LocalConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 }
 if ([string]::IsNullOrWhiteSpace($FlowAgentDir)) {
-    $FlowAgentDir = if ($LocalConfig.flow_agent_dir) {
-        [string]$LocalConfig.flow_agent_dir
+    if ($LocalConfig -and $LocalConfig.flow_agent_dir) {
+        $FlowAgentDir = [string]$LocalConfig.flow_agent_dir
     } else {
-        "Y:\ChatGPT\google_flow_automate\flow-agent\flow-agent"
+        $DefaultFlowAgentDir = Join-Path $env:USERPROFILE "FlowAgent\flow-agent\flow-agent"
+        if (Test-Path -LiteralPath (Join-Path $DefaultFlowAgentDir ".env") -PathType Leaf) {
+            $FlowAgentDir = $DefaultFlowAgentDir
+        } else {
+            throw "No se encontro la instalacion local de Flow Agent. Ejecuta scripts\INSTALAR-FLOW.cmd o indica -FlowAgentDir."
+        }
     }
 }
 if ([string]::IsNullOrWhiteSpace($NgrokExe)) {
-    $NgrokExe = if ($LocalConfig.ngrok_exe) {
-        [string]$LocalConfig.ngrok_exe
+    if ($LocalConfig -and $LocalConfig.ngrok_exe) {
+        $NgrokExe = [string]$LocalConfig.ngrok_exe
     } else {
-        "Y:\ngrok-v3-stable-windows-amd64\ngrok.exe"
+        $NgrokCommand = Get-Command ngrok -ErrorAction SilentlyContinue
+        if (-not $NgrokCommand) {
+            throw "No se encontro ngrok. Ejecuta scripts\INSTALAR-FLOW.cmd o indica -NgrokExe."
+        }
+        $NgrokExe = $NgrokCommand.Source
     }
 }
 if ($Port -le 0) {
-    $Port = if ($LocalConfig.port) { [int]$LocalConfig.port } else { 8001 }
+    $Port = if ($LocalConfig -and $LocalConfig.port) { [int]$LocalConfig.port } else { 8001 }
 }
 
 $StatePath = Join-Path $ScriptRoot ".flow-local-state.json"
