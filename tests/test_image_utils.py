@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 from PIL import Image
 
 from comfyui_flow_agent_under_test.flow_agent_client import FlowAgentError

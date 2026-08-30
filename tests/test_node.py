@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
-import torch
+import pytest
+
+torch = pytest.importorskip("torch")
 
 from comfyui_flow_agent_under_test import nodes
 

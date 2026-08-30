@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import mimetypes
 import os
 import time
 import uuid
@@ -34,6 +35,8 @@ class FlowAgentConfig:
     api_key: str
     connect_timeout: float = 10.0
     max_download_bytes: int = 64 * 1024 * 1024
+    max_video_download_bytes: int = 2048 * 1024 * 1024
+    max_upload_bytes: int = 2048 * 1024 * 1024
 
     @classmethod
     def from_env(cls) -> "FlowAgentConfig":
@@ -60,11 +63,19 @@ class FlowAgentConfig:
         max_download_mb = _positive_float_env(
             "FLOW_AGENT_MAX_DOWNLOAD_MB", default=64.0
         )
+        max_video_download_mb = _positive_float_env(
+            "FLOW_AGENT_MAX_VIDEO_DOWNLOAD_MB", default=2048.0
+        )
+        max_upload_mb = _positive_float_env(
+            "FLOW_AGENT_MAX_UPLOAD_MB", default=2048.0
+        )
         return cls(
             base_url=base_url,
             api_key=api_key,
             connect_timeout=connect_timeout,
             max_download_bytes=int(max_download_mb * 1024 * 1024),
+            max_video_download_bytes=int(max_video_download_mb * 1024 * 1024),
+            max_upload_bytes=int(max_upload_mb * 1024 * 1024),
         )
 
 
@@ -186,18 +197,41 @@ class FlowAgentClient:
             raise FlowAgentHTTPError("GET /v1/models did not return a data array.")
         return [item["id"] for item in data if isinstance(item, dict) and item.get("id")]
 
-    def upload_image(self, png_data_uri: str, timeout_seconds: float) -> str:
+    def upload_media(self, data_uri: str, timeout_seconds: float) -> dict[str, Any]:
         # /v1/upload has no idempotency contract, so it is deliberately not retried.
         payload = self._request_json(
             "POST",
             "/v1/upload",
-            json_body={"image_base64": png_data_uri},
+            json_body={"image_base64": data_uri},
             timeout_seconds=timeout_seconds,
         )
         media_id = payload.get("media_id") if isinstance(payload, dict) else None
         if not isinstance(media_id, str) or not media_id.strip():
             raise FlowAgentHTTPError("POST /v1/upload did not return a non-empty media_id.")
-        return media_id
+        return payload
+
+    def upload_image(self, png_data_uri: str, timeout_seconds: float) -> str:
+        return self.upload_media(png_data_uri, timeout_seconds)["media_id"]
+
+    def upload_file(self, path: str, timeout_seconds: float) -> dict[str, Any]:
+        absolute = os.path.abspath(os.path.expanduser(path))
+        if not os.path.isfile(absolute):
+            raise FlowAgentConfigurationError(f"Media file does not exist: {absolute}")
+        size = os.path.getsize(absolute)
+        if size > self.config.max_upload_bytes:
+            raise FlowAgentConfigurationError(
+                f"Media file exceeds FLOW_AGENT_MAX_UPLOAD_MB: {size / (1024 * 1024):.1f} MiB."
+            )
+        mime_type = mimetypes.guess_type(absolute)[0] or "application/octet-stream"
+        if not (mime_type.startswith("image/") or mime_type.startswith("video/")):
+            raise FlowAgentConfigurationError(
+                f"Unsupported media extension for upload: {os.path.basename(absolute)}"
+            )
+        with open(absolute, "rb") as handle:
+            encoded = base64.b64encode(handle.read()).decode("ascii")
+        return self.upload_media(
+            f"data:{mime_type};base64,{encoded}", timeout_seconds=timeout_seconds
+        )
 
     def generate_images(
         self,
@@ -225,6 +259,8 @@ class FlowAgentClient:
 
         key = idempotency_key or f"comfyui-{uuid.uuid4()}"
         payload = self._post_generation_with_replay(
+            path="/v1/images/generations",
+            operation="image",
             body=body,
             idempotency_key=key,
             timeout_seconds=timeout_seconds,
@@ -234,6 +270,10 @@ class FlowAgentClient:
             raise FlowAgentHTTPError(
                 "POST /v1/images/generations returned no generated images."
             )
+        # Google occasionally returns multiple candidates for one gem_pix_2
+        # request. `n` is the public contract, so never propagate more items
+        # than the caller requested.
+        data = data[:count]
         for index, item in enumerate(data):
             if not isinstance(item, dict) or not (item.get("url") or item.get("b64_json")):
                 raise FlowAgentHTTPError(
@@ -241,9 +281,120 @@ class FlowAgentClient:
                 )
         return data
 
+    def generate_videos(
+        self,
+        *,
+        prompt: str,
+        aspect: str,
+        count: int,
+        duration: int,
+        seed: int,
+        resolution: str,
+        start_media_id: str | None = None,
+        end_media_id: str | None = None,
+        ref_media_ids: Iterable[str] = (),
+        is_video: bool = False,
+        video_model: str | None = None,
+        timeout_seconds: float,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "prompt": prompt,
+            "aspect": aspect,
+            "n": count,
+            "duration": duration,
+            "seed": seed,
+            "resolution": resolution,
+        }
+        refs = [value for value in ref_media_ids if value]
+        if refs:
+            body["ref_media_ids"] = refs
+        if start_media_id:
+            body["start_media_id"] = start_media_id
+        if end_media_id:
+            body["end_media_id"] = end_media_id
+        if is_video:
+            body["is_video"] = True
+        if video_model:
+            body["video_model"] = video_model
+
+        key = idempotency_key or f"comfyui-video-{uuid.uuid4()}"
+        started = time.monotonic()
+        payload = self._post_generation_with_replay(
+            path="/v1/videos/generations",
+            operation="video",
+            body=body,
+            idempotency_key=key,
+            timeout_seconds=timeout_seconds,
+        )
+        remaining = timeout_seconds - (time.monotonic() - started)
+        return self._wait_for_video_job(payload, remaining)
+
+    def upsample_video(
+        self,
+        *,
+        media_id: str,
+        resolution: str,
+        aspect: str,
+        seed: int,
+        timeout_seconds: float,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        key = idempotency_key or f"comfyui-upsample-{uuid.uuid4()}"
+        started = time.monotonic()
+        payload = self._post_generation_with_replay(
+            path="/v1/videos/upsample",
+            operation="video upsample",
+            body={
+                "media_id": media_id,
+                "resolution": resolution,
+                "aspect": aspect,
+                "seed": seed,
+            },
+            idempotency_key=key,
+            timeout_seconds=timeout_seconds,
+        )
+        remaining = timeout_seconds - (time.monotonic() - started)
+        return self._wait_for_video_job(payload, remaining)
+
+    def _wait_for_video_job(
+        self, payload: dict[str, Any], timeout_seconds: float
+    ) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise FlowAgentHTTPError("Flow video endpoint returned a non-object response.")
+        job_id = payload.get("job_id")
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while payload.get("status") == "processing":
+            if not isinstance(job_id, str) or not job_id:
+                raise FlowAgentHTTPError("Processing video response is missing job_id.")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise FlowAgentHTTPError(
+                    f"Flow video job {job_id} exceeded the total timeout; it can still finish remotely."
+                )
+            time.sleep(min(5.0, remaining))
+            payload = self._request_json(
+                "GET",
+                f"/v1/videos/generations/{job_id}",
+                timeout_seconds=min(30.0, max(1.0, remaining)),
+            )
+            if not isinstance(payload, dict):
+                raise FlowAgentHTTPError("Video polling returned a non-object response.")
+        if payload.get("status") == "failed":
+            error = payload.get("error")
+            raise FlowAgentHTTPError(f"Flow video generation failed: {error}")
+        data = payload.get("data")
+        if payload.get("status") != "succeeded" or not isinstance(data, list) or not data:
+            raise FlowAgentHTTPError(
+                f"Unexpected Flow video job response: status={payload.get('status')!r}."
+            )
+        return payload
+
     def _post_generation_with_replay(
         self,
         *,
+        path: str,
+        operation: str,
         body: dict[str, Any],
         idempotency_key: str,
         timeout_seconds: float,
@@ -256,7 +407,7 @@ class FlowAgentClient:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise FlowAgentHTTPError(
-                    "Flow image generation exceeded the total timeout. The same request was "
+                    f"Flow {operation} exceeded the total timeout. The same request was "
                     f"protected with Idempotency-Key {idempotency_key!r}; increase timeout_seconds "
                     "and retry if needed."
                 ) from last_error
@@ -266,7 +417,7 @@ class FlowAgentClient:
             try:
                 return self._request_json(
                     "POST",
-                    "/v1/images/generations",
+                    path,
                     json_body=body,
                     timeout_seconds=per_attempt_timeout,
                     extra_headers={"Idempotency-Key": idempotency_key},
@@ -335,6 +486,60 @@ class FlowAgentClient:
         if total == 0:
             raise FlowAgentHTTPError("Generated image download returned an empty body.")
         return b"".join(chunks)
+
+    def download_media_to_file(
+        self,
+        item: dict[str, Any],
+        destination: str,
+        timeout_seconds: float = 300.0,
+    ) -> str:
+        raw_url = item.get("url")
+        if not isinstance(raw_url, str) or not raw_url:
+            raise FlowAgentHTTPError("Generated video response is missing its URL.")
+        url = self._absolute_url(raw_url)
+        try:
+            response = self.session.get(
+                url,
+                headers=self._headers(url, json_response=False),
+                timeout=(self.config.connect_timeout, timeout_seconds),
+                stream=True,
+            )
+        except requests.RequestException as exc:
+            raise FlowAgentHTTPError(f"Video download failed: {exc}") from exc
+        if not response.ok:
+            raise self._http_error(response, "GET", url)
+
+        content_length = response.headers.get("Content-Length")
+        if content_length:
+            try:
+                if int(content_length) > self.config.max_video_download_bytes:
+                    raise FlowAgentHTTPError(
+                        "Generated video exceeds FLOW_AGENT_MAX_VIDEO_DOWNLOAD_MB."
+                    )
+            except ValueError:
+                pass
+
+        os.makedirs(os.path.dirname(destination) or ".", exist_ok=True)
+        temporary = f"{destination}.part"
+        total = 0
+        try:
+            with open(temporary, "wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > self.config.max_video_download_bytes:
+                        raise FlowAgentHTTPError(
+                            "Generated video exceeds FLOW_AGENT_MAX_VIDEO_DOWNLOAD_MB."
+                        )
+                    handle.write(chunk)
+            if total == 0:
+                raise FlowAgentHTTPError("Generated video download returned an empty body.")
+            os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+        return destination
 
     def _request_json(
         self,

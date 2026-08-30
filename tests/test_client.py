@@ -114,6 +114,86 @@ def test_generation_payload_matches_repo_contract():
     assert call[2]["headers"]["Idempotency-Key"] == "stable-key"
 
 
+def test_image_count_strictly_caps_extra_gem_pix_candidates():
+    session = FakeSession(
+        [
+            FakeResponse(
+                payload={
+                    "data": [
+                        {"url": "/download/1.png"},
+                        {"url": "/download/2.png"},
+                        {"url": "/download/3.png"},
+                    ]
+                }
+            )
+        ]
+    )
+    client = FlowAgentClient(config(), session=session)
+    items = client.generate_images(
+        prompt="one image",
+        model="gem_pix_2",
+        size="1024x1024",
+        count=1,
+        seed=1,
+        timeout_seconds=30,
+    )
+    assert len(items) == 1
+
+
+def test_video_payload_and_processing_job_poll(monkeypatch):
+    session = FakeSession(
+        [
+            FakeResponse(
+                status=202,
+                payload={"job_id": "video-1", "status": "processing", "data": []},
+            ),
+            FakeResponse(
+                payload={
+                    "job_id": "video-1",
+                    "status": "succeeded",
+                    "data": [
+                        {
+                            "url": "/download/video.mp4",
+                            "media_id": "video-media-1",
+                            "resolution": "720p",
+                        }
+                    ],
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "comfyui_flow_agent_under_test.flow_agent_client.time.sleep",
+        lambda _seconds: None,
+    )
+    client = FlowAgentClient(config(), session=session)
+    result = client.generate_videos(
+        prompt="moving camera",
+        aspect="landscape",
+        count=1,
+        duration=8,
+        seed=42,
+        resolution="720p",
+        start_media_id="start-1",
+        ref_media_ids=["ingredient-1"],
+        video_model=None,
+        timeout_seconds=30,
+        idempotency_key="video-key",
+    )
+    assert result["status"] == "succeeded"
+    assert session.calls[0][2]["json"] == {
+        "prompt": "moving camera",
+        "aspect": "landscape",
+        "n": 1,
+        "duration": 8,
+        "seed": 42,
+        "resolution": "720p",
+        "ref_media_ids": ["ingredient-1"],
+        "start_media_id": "start-1",
+    }
+    assert session.calls[1][1].endswith("/v1/videos/generations/video-1")
+
+
 def test_generation_retry_reuses_the_same_idempotency_key(monkeypatch):
     session = FakeSession(
         [

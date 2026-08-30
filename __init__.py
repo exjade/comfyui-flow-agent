@@ -1,14 +1,20 @@
-"""ComfyUI registration for Flow Agent image generation."""
+"""ComfyUI registration for Flow Agent image and video generation."""
 
-from .nodes import FlowNanoBanana
+from .nodes import FlowNanoBanana, FlowOmniFlashVideo, FlowUploadMedia, FlowVideoUpsample
 
 
 NODE_CLASS_MAPPINGS = {
     "FlowNanoBanana": FlowNanoBanana,
+    "FlowOmniFlashVideo": FlowOmniFlashVideo,
+    "FlowUploadMedia": FlowUploadMedia,
+    "FlowVideoUpsample": FlowVideoUpsample,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "FlowNanoBanana": "Flow / Nano Banana",
+    "FlowOmniFlashVideo": "Flow / Omni Flash Video",
+    "FlowUploadMedia": "Flow / Upload Media",
+    "FlowVideoUpsample": "Flow / Upsample Video",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
