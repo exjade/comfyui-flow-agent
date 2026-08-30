@@ -555,7 +555,7 @@ class FlowCharacterCreator:
                         size=ASPECT_TO_SIZE[aspect_ratio],
                         count=1,
                         seed=seed,
-                        ref_media_ids=[reference_media_id],
+                        ref_media_ids=reference_ids,
                         timeout_seconds=float(timeout_per_image),
                         idempotency_key=idempotency_key,
                     )[0]
