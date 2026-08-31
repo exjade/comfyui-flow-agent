@@ -67,6 +67,28 @@ def test_remote_env_requires_api_key(monkeypatch):
         FlowAgentConfig.from_env()
 
 
+def test_local_installer_configuration_is_discovered_without_process_env(
+    monkeypatch, tmp_path
+):
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    (agent_dir / ".env").write_text("SERVER_API_KEY=local-secret\n", encoding="utf-8")
+    data_dir = tmp_path / "ComfyUIFlowAgent"
+    data_dir.mkdir()
+    (data_dir / "flow-local.config.json").write_text(
+        '{"flow_agent_dir": "' + str(agent_dir).replace("\\", "\\\\") + '", "port": 8001}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("FLOW_AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("FLOW_AGENT_API_KEY", raising=False)
+
+    discovered = FlowAgentConfig.from_env()
+
+    assert discovered.base_url == "http://127.0.0.1:8001"
+    assert discovered.api_key == "local-secret"
+
+
 def test_unresolved_runpod_secret_reference_is_rejected(monkeypatch):
     monkeypatch.setenv("FLOW_AGENT_BASE_URL", "https://example.ngrok-free.app")
     monkeypatch.setenv(

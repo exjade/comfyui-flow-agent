@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import mimetypes
 import os
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urljoin, urlparse
 
@@ -41,14 +43,21 @@ class FlowAgentConfig:
     @classmethod
     def from_env(cls) -> "FlowAgentConfig":
         raw_base_url = os.environ.get("FLOW_AGENT_BASE_URL", "").strip()
+        api_key = os.environ.get("FLOW_AGENT_API_KEY", "").strip()
+        if not raw_base_url:
+            discovered = _discover_windows_local_flow_agent()
+            if discovered is not None:
+                raw_base_url, discovered_api_key = discovered
+                if not api_key:
+                    api_key = discovered_api_key
         if not raw_base_url:
             raise FlowAgentConfigurationError(
-                "FLOW_AGENT_BASE_URL is not configured. Set it to the HTTPS ngrok URL "
-                "before starting ComfyUI."
+                "FLOW_AGENT_BASE_URL is not configured and no local Flow Agent installation "
+                "was discovered. Run 04.1-START-FLOW-LOCAL.cmd for local ComfyUI or set "
+                "the HTTPS ngrok URL before starting a remote ComfyUI."
             )
 
         base_url = _normalise_base_url(raw_base_url)
-        api_key = os.environ.get("FLOW_AGENT_API_KEY", "").strip()
         if api_key.startswith("{{") and "RUNPOD_SECRET_" in api_key:
             raise FlowAgentConfigurationError(
                 "FLOW_AGENT_API_KEY still contains an unresolved RunPod secret reference. "
@@ -82,6 +91,29 @@ class FlowAgentConfig:
             max_video_download_bytes=int(max_video_download_mb * 1024 * 1024),
             max_upload_bytes=int(max_upload_mb * 1024 * 1024),
         )
+
+
+def _discover_windows_local_flow_agent() -> tuple[str, str] | None:
+    """Discover the installer-owned local endpoint without exposing its API key."""
+
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if not local_app_data:
+        return None
+    config_path = Path(local_app_data) / "ComfyUIFlowAgent" / "flow-local.config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+        port = int(config.get("port", 8001))
+        if not 1 <= port <= 65535:
+            return None
+        flow_agent_dir = Path(str(config["flow_agent_dir"]))
+        env_path = flow_agent_dir / ".env"
+        api_key = ""
+        for line in env_path.read_text(encoding="utf-8-sig").splitlines():
+            if line.startswith("SERVER_API_KEY="):
+                api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+        return f"http://127.0.0.1:{port}", api_key
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
 
 
 def _positive_float_env(name: str, default: float) -> float:

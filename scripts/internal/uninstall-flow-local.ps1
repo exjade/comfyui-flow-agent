@@ -13,7 +13,12 @@ $LegacyConfigPath = Join-Path $LauncherRoot "flow-local.config.json"
 $LegacyStatePath = Join-Path $LauncherRoot ".flow-local-state.json"
 if (-not (Test-Path -LiteralPath $ConfigPath) -and (Test-Path -LiteralPath $LegacyConfigPath)) { $ConfigPath = $LegacyConfigPath }
 if (-not (Test-Path -LiteralPath $StatePath) -and (Test-Path -LiteralPath $LegacyStatePath)) { $StatePath = $LegacyStatePath }
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "START FLOW AGENT.lnk"
+$Desktop = [Environment]::GetFolderPath("Desktop")
+$ShortcutDefinitions = @(
+    @{ Path = Join-Path $Desktop "START FLOW AGENT - RUNPOD.lnk"; Launcher = "04-START-FLOW-RUNPOD.cmd" },
+    @{ Path = Join-Path $Desktop "START FLOW AGENT - LOCAL.lnk"; Launcher = "04.1-START-FLOW-LOCAL.cmd" },
+    @{ Path = Join-Path $Desktop "START FLOW AGENT.lnk"; Launcher = "04-START-FLOW.cmd" }
+)
 
 function Get-FullPath([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return "" }
@@ -92,6 +97,25 @@ if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) {
     }
 }
 
+# Remove only the Windows variables that this installation can prove it owns.
+if ($Config -and $Config.flow_agent_dir) {
+    $ConfiguredPort = if ($Config.port) { [int]$Config.port } else { 8001 }
+    $ExpectedLocalUrl = "http://127.0.0.1:$ConfiguredPort"
+    $InstalledApiKey = ""
+    $InstalledEnvPath = Join-Path ([string]$Config.flow_agent_dir) ".env"
+    if (Test-Path -LiteralPath $InstalledEnvPath -PathType Leaf) {
+        $ApiKeyLine = Get-Content -LiteralPath $InstalledEnvPath |
+            Where-Object { $_ -match '^SERVER_API_KEY=' } | Select-Object -Last 1
+        if ($ApiKeyLine) { $InstalledApiKey = $ApiKeyLine.Split('=', 2)[1].Trim().Trim('"').Trim("'") }
+    }
+    if ([Environment]::GetEnvironmentVariable("FLOW_AGENT_BASE_URL", "User") -eq $ExpectedLocalUrl) {
+        [Environment]::SetEnvironmentVariable("FLOW_AGENT_BASE_URL", $null, "User")
+    }
+    if ($InstalledApiKey -and [Environment]::GetEnvironmentVariable("FLOW_AGENT_API_KEY", "User") -eq $InstalledApiKey) {
+        [Environment]::SetEnvironmentVariable("FLOW_AGENT_API_KEY", $null, "User")
+    }
+}
+
 if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
     try {
         $State = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
@@ -140,18 +164,20 @@ if ($Config -and $Config.managed_flow_repository -eq $true) {
     Write-Warning "The installation has no valid ownership marker. The Flow Agent folder will be preserved."
 }
 
-if (Test-Path -LiteralPath $ShortcutPath -PathType Leaf) {
-    try {
-        $Shell = New-Object -ComObject WScript.Shell
-        $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-        $ExpectedTarget = Get-FullPath (Join-Path $LauncherRoot "04-START-FLOW.cmd")
-        if ((Get-FullPath $Shortcut.TargetPath) -eq $ExpectedTarget) {
-            Remove-Item -LiteralPath $ShortcutPath -Force
-        } else {
-            Write-Warning "The shortcut was preserved because it points to another target."
+foreach ($Definition in $ShortcutDefinitions) {
+    if (Test-Path -LiteralPath $Definition.Path -PathType Leaf) {
+        try {
+            $Shell = New-Object -ComObject WScript.Shell
+            $Shortcut = $Shell.CreateShortcut($Definition.Path)
+            $ExpectedTarget = Get-FullPath (Join-Path $LauncherRoot $Definition.Launcher)
+            if ((Get-FullPath $Shortcut.TargetPath) -eq $ExpectedTarget) {
+                Remove-Item -LiteralPath $Definition.Path -Force
+            } else {
+                Write-Warning "The shortcut '$($Definition.Path)' was preserved because it points to another target."
+            }
+        } catch {
+            Write-Warning "The shortcut '$($Definition.Path)' could not be validated and was preserved."
         }
-    } catch {
-        Write-Warning "The shortcut could not be validated and was preserved."
     }
 }
 

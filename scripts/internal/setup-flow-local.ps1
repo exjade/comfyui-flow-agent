@@ -327,17 +327,37 @@ $Config = [ordered]@{
 $Config | ConvertTo-Json | Set-Content -LiteralPath $ConfigPath -Encoding utf8
 
 $Desktop = [Environment]::GetFolderPath("Desktop")
-$ShortcutPath = Join-Path $Desktop "START FLOW AGENT.lnk"
 $WshShell = New-Object -ComObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = Join-Path $LauncherRoot "04-START-FLOW.cmd"
-$Shortcut.WorkingDirectory = $LauncherRoot
-$Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,137"
-$Shortcut.Save()
+$LegacyShortcutPath = Join-Path $Desktop "START FLOW AGENT.lnk"
+if (Test-Path -LiteralPath $LegacyShortcutPath -PathType Leaf) {
+    try {
+        $LegacyShortcut = $WshShell.CreateShortcut($LegacyShortcutPath)
+        $LegacyTarget = [IO.Path]::GetFullPath((Join-Path $LauncherRoot "04-START-FLOW.cmd"))
+        if ([IO.Path]::GetFullPath($LegacyShortcut.TargetPath) -eq $LegacyTarget) {
+            Remove-Item -LiteralPath $LegacyShortcutPath -Force
+        }
+    } catch {
+        Write-Warning "The old desktop shortcut could not be validated and was preserved."
+    }
+}
+$ShortcutDefinitions = @(
+    @{ Name = "START FLOW AGENT - RUNPOD.lnk"; Launcher = "04-START-FLOW-RUNPOD.cmd" },
+    @{ Name = "START FLOW AGENT - LOCAL.lnk"; Launcher = "04.1-START-FLOW-LOCAL.cmd" }
+)
+foreach ($Definition in $ShortcutDefinitions) {
+    $ShortcutPath = Join-Path $Desktop $Definition.Name
+    $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = Join-Path $LauncherRoot $Definition.Launcher
+    $Shortcut.WorkingDirectory = $LauncherRoot
+    $Shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,137"
+    $Shortcut.Save()
+}
 
 Write-Host ""
 Write-Host "LOCAL INSTALLATION COMPLETE" -ForegroundColor Green
 Write-Host "Continue with the numbered launchers in the scripts folder:"
 Write-Host "  2. 02-COPY-API-KEY.cmd"
 Write-Host "  3. 03-SHOW-RUNPOD-INSTALL.cmd"
-Write-Host "  4. 04-START-FLOW.cmd"
+Write-Host "  3.1 03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd (local ComfyUI only)"
+Write-Host "  4. 04-START-FLOW-RUNPOD.cmd (when ComfyUI runs on RunPod)"
+Write-Host "  4.1 04.1-START-FLOW-LOCAL.cmd (when ComfyUI runs on this PC)"

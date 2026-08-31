@@ -170,5 +170,5 @@ Remove-Item -LiteralPath $StatePath -ErrorAction SilentlyContinue
 if ($ManagedProcessIds.Count -eq 0) {
     Write-Host "No managed Flow Agent or ngrok processes were running." -ForegroundColor Green
 } else {
-    Write-Host "Flow Agent, its extension bridge, and ngrok have stopped." -ForegroundColor Green
+    Write-Host "Flow Agent, its extension bridge, and any managed ngrok tunnel have stopped." -ForegroundColor Green
 }
