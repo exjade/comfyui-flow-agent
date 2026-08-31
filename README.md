@@ -2,6 +2,8 @@
 
 ComfyUI nodes for using Google Flow from either ComfyUI on the same Windows PC or a remote RunPod through a local Flow Agent instance.
 
+**Guía para usuarios en español:** [ComfyUI local y RunPod](docs/GUIA-USUARIO-LOCAL-Y-RUNPOD.md)
+
 API contracts were verified against `kodelyx/flow-agent` revision `206285a47d15018765df5b16bce1d72198b1bb29` (Flow Agent 2.0.7).
 
 ## Included nodes
