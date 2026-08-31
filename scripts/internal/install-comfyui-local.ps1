@@ -14,7 +14,10 @@ function Resolve-ComfyUIRoot([string]$RequestedRoot) {
     $InstallationsPath = Join-Path $env:APPDATA "Comfy Desktop\installations.json"
     if (Test-Path -LiteralPath $InstallationsPath -PathType Leaf) {
         try {
-            $Installations = @(Get-Content -LiteralPath $InstallationsPath -Raw | ConvertFrom-Json)
+            # Windows PowerShell 5 may preserve a top-level JSON array as one
+            # pipeline object when it is wrapped directly in @(...). Assign it
+            # first, then let foreach enumerate the actual array entries.
+            $Installations = Get-Content -LiteralPath $InstallationsPath -Raw | ConvertFrom-Json
             foreach ($Installation in $Installations) {
                 if ($Installation.status -ne "installed" -or -not $Installation.installPath) { continue }
                 foreach ($Candidate in @(
@@ -32,7 +35,14 @@ function Resolve-ComfyUIRoot([string]$RequestedRoot) {
     }
 
     $Candidates = @($Candidates | Select-Object -Unique)
-    if ($Candidates.Count -eq 1) { return $Candidates[0] }
+    if ($Candidates.Count -eq 1) {
+        $DetectedRoot = $Candidates[0]
+        Write-Host "ComfyUI detectado / detected:" -ForegroundColor Cyan
+        Write-Host "  $DetectedRoot"
+        $RequestedPath = Read-Host "Presiona Enter para usarlo, o pega otra carpeta que contenga main.py"
+        if ([string]::IsNullOrWhiteSpace($RequestedPath)) { return $DetectedRoot }
+        return Resolve-ComfyUIRoot -RequestedRoot $RequestedPath
+    }
     if ($Candidates.Count -gt 1) {
         Write-Host "Available local ComfyUI installations:" -ForegroundColor Cyan
         for ($Index = 0; $Index -lt $Candidates.Count; $Index++) {

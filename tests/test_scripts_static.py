@@ -71,18 +71,31 @@ def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert '--directory=flow-agent' in SETUP
 
 
+def test_local_installer_enumerates_comfy_desktop_json_in_windows_powershell():
+    installer = (ROOT / "scripts" / "internal" / "install-comfyui-local.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "$Installations = Get-Content" in installer
+    assert "$Installations = @(Get-Content" not in installer
+    assert "ComfyUI detectado / detected:" in installer
+    assert "Presiona Enter para usarlo" in installer
+    assert "return Resolve-ComfyUIRoot -RequestedRoot $RequestedPath" in installer
+
+
 def test_start_refuses_to_run_without_required_backend_fixes():
     assert "flow-agent-media-reuse.patch" in START
     assert "flow-agent-video-reference.patch" in START
-    assert "apply --reverse --check --unidiff-zero" in START
+    assert "apply --recount --reverse --check --unidiff-zero" in START
     assert "Flow Agent compatibility fixes are not installed" in START
     assert '-C $FlowAgentRepositoryDir apply' in START
     assert '"--directory=$FlowAgentRepositorySubdir"' in START
 
 
 def test_conditioned_video_patch_tracks_current_omni_request_contract():
-    assert 'MODELS["t2v"].get(duration' in VIDEO_PATCH
+    assert '"reference": "abra_r2v"' in VIDEO_PATCH
+    assert '"i2v": "abra_i2v"' in VIDEO_PATCH
     assert '+            "textInput": {"prompt": prompt}' in VIDEO_PATCH
+    assert '+            "resolution": resolution' not in VIDEO_PATCH
     assert "veo_3_0_r2v_fast" not in VIDEO_PATCH
     assert "veo_3_1_i2v_s_fast" not in VIDEO_PATCH
     assert "cached_image = None if is_video_input" not in VIDEO_PATCH

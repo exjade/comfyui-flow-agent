@@ -7,7 +7,6 @@ const FLOW_VIDEO_NODES = new Set([
 ]);
 
 const VIDEO_CREDITS = {
-    "360p": { 4: 4, 6: 5, 8: 6, 10: 7 },
     "720p": { 4: 7, 6: 10, 8: 12, 10: 15 },
 };
 

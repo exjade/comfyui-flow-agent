@@ -43,7 +43,7 @@ function Find-CommandPath([string]$Name) {
 
 function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) { return $false }
-    & $GitExe -C $FlowRepoDir apply --reverse --check --unidiff-zero --directory=flow-agent $PatchPath 2>$null
+    & $GitExe -C $FlowRepoDir apply --recount --reverse --check --unidiff-zero --directory=flow-agent $PatchPath 2>$null
     return $LASTEXITCODE -eq 0
 }
 
@@ -55,11 +55,11 @@ function Apply-BackendPatchFile([string]$GitExe, [string]$PatchPath, [string]$Pa
         Write-Host "Flow Agent $PatchName is already installed." -ForegroundColor Green
         return
     }
-    & $GitExe -C $FlowRepoDir apply --check --unidiff-zero --directory=flow-agent $PatchPath
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero --directory=flow-agent $PatchPath
     if ($LASTEXITCODE -ne 0) {
         throw "The installed Flow Agent version is not compatible with the $PatchName. Update comfyui-flow-agent and retry."
     }
-    & $GitExe -C $FlowRepoDir apply --unidiff-zero --directory=flow-agent $PatchPath
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero --directory=flow-agent $PatchPath
     if ($LASTEXITCODE -ne 0) { throw "The Flow Agent $PatchName could not be installed." }
     Write-Host "Installed Flow Agent $PatchName." -ForegroundColor Green
 }
@@ -195,7 +195,7 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
     )
     for ($Index = $AppliedBackendPatches.Count - 1; $Index -ge 0; $Index--) {
         $Patch = $AppliedBackendPatches[$Index]
-        & $GitExe -C $FlowRepoDir apply --reverse --unidiff-zero --directory=flow-agent $Patch.Path
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero --directory=flow-agent $Patch.Path
         if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent $($Patch.Name) could not be prepared for update." }
     }
     & $GitExe -C $FlowRepoDir pull --ff-only

@@ -31,11 +31,6 @@ index 39cc61a..8146e58 100644
  # undocumented API, so both stay overridable without a code change.
  NATIVE_VIDEO_RESOLUTION = "720p"
  
-+VIDEO_GENERATION_RESOLUTIONS = {
-+    "360p": "VIDEO_RESOLUTION_360P",
-+    "720p": "VIDEO_RESOLUTION_720P",
-+}
-+
  VIDEO_UPSAMPLE_MODELS = {
      "1080p": os.environ.get("VIDEO_UPSAMPLER_1080P_MODEL", "veo_3_1_upsampler_1080p"),
      "4k": os.environ.get("VIDEO_UPSAMPLER_4K_MODEL", "veo_3_1_upsampler_4k"),
@@ -43,10 +38,7 @@ index 39cc61a..8146e58 100644
      10: 15,
  }
  
-+CREDITS_PER_VIDEO_BY_RESOLUTION = {
-+    "360p": {4: 4, 6: 5, 8: 6, 10: 7},
-+    "720p": CREDITS_PER_VIDEO,
-+}
++CREDITS_PER_VIDEO_BY_RESOLUTION = {"720p": CREDITS_PER_VIDEO}
 +
  # ─── Runtime constants ───────────────────────────────────────
  
@@ -143,10 +135,17 @@ index 2c09d97..2e2850d 100644
  
  
 +def _conditioned_video_model(mode: str, aspect: str, duration: int) -> str:
-+    """Return an explicit override or Flow's current Omni duration model."""
++    """Return an explicit override or the matching Omni input-mode model."""
 +    orientation = "portrait" if str(aspect).upper().endswith("PORTRAIT") else "landscape"
 +    override = VIDEO_INPUT_MODELS[mode][orientation]
-+    return override or MODELS["t2v"].get(duration, f"abra_t2v_{duration}s")
++    if override:
++        return override
++    prefix = {
++        "i2v": "abra_i2v",
++        "first_last": "abra_i2v",
++        "reference": "abra_r2v",
++    }[mode]
++    return f"{prefix}_{duration}s"
 +
 +
  async def upload_image(
@@ -157,8 +156,7 @@ index 2c09d97..2e2850d 100644
  async def generate_video_i2v(bridge, prompt: str, aspect: str, project_id: str,
                                image_media_id: str, duration: int = 8, count: int = 1,
 -                              seed: int = None, video_model: str = None) -> list[str] | None:
-+                              seed: int = None, video_model: str = None,
-+                              resolution: str = "VIDEO_RESOLUTION_720P") -> list[str] | None:
++                              seed: int = None, video_model: str = None) -> list[str] | None:
      """Generate video from a start image. Returns list of media_ids."""
 -    model_key = video_model or f"abra_t2v_{duration}s"
 +    model_key = video_model or _conditioned_video_model("i2v", aspect, duration)
@@ -173,7 +171,6 @@ index 2c09d97..2e2850d 100644
              "seed": resolve_seed(seed, i),
              "metadata": {},
              "startImage": {"mediaId": image_media_id},
-+            "resolution": resolution,
          })
  
      body = {
@@ -182,8 +179,7 @@ index 2c09d97..2e2850d 100644
                               duration: int = 8, count: int = 1,
                               seed: int = None,
 -                             video_model: str = None) -> list[str] | None:
-+                             video_model: str = None,
-+                             resolution: str = "VIDEO_RESOLUTION_720P") -> list[str] | None:
++                             video_model: str = None) -> list[str] | None:
      """Generate video with First+Last frame control.
  
      Video transitions smoothly from start_image to end_image.
@@ -202,7 +198,6 @@ index 2c09d97..2e2850d 100644
              "metadata": {},
              "startImage": {"mediaId": start_image_id},
              "endImage": {"mediaId": end_image_id},
-+            "resolution": resolution,
          })
  
      body = {
@@ -211,8 +206,7 @@ index 2c09d97..2e2850d 100644
                                ref_media_ids: list[str],
                                duration: int = 8, count: int = 1,
 -                              seed: int = None, video_model: str = None) -> list[str] | None:
-+                              seed: int = None, video_model: str = None,
-+                              resolution: str = "VIDEO_RESOLUTION_720P") -> list[str] | None:
++                              seed: int = None, video_model: str = None) -> list[str] | None:
      """Generate video from reference images (character/style consistency)."""
 -    model_key = video_model or f"abra_t2v_{duration}s"
 +    model_key = video_model or _conditioned_video_model("reference", aspect, duration)
@@ -229,7 +223,6 @@ index 2c09d97..2e2850d 100644
              "seed": resolve_seed(seed, i),
              "metadata": {},
              "referenceImages": ref_images,
-+            "resolution": resolution,
          })
  
      body = {
@@ -242,8 +235,7 @@ index b09506c..d502c18 100644
  async def generate_video(bridge, prompt: str, aspect: str, project_id: str,
                           duration: int = 10, count: int = 1,
 -                         seed: int = None, video_model: str = None) -> list[str] | None:
-+                         seed: int = None, video_model: str = None,
-+                         resolution: str = "VIDEO_RESOLUTION_720P") -> list[str] | None:
++                         seed: int = None, video_model: str = None) -> list[str] | None:
      """Submit T2V generation request. Returns list of media_ids."""
      model_key = video_model or f"abra_t2v_{duration}s"
  
@@ -251,7 +243,6 @@ index b09506c..d502c18 100644
              "videoModelKey": model_key,
              "seed": resolve_seed(seed, i),
              "metadata": {},
-+            "resolution": resolution,
          })
  
      body = {
@@ -264,8 +255,7 @@ index 028d6af..278739a 100644
                       start_frame: int = 0, end_frame: int = None,
                       ref_media_ids: list[str] = None,
 -                     seed: int = None) -> list[str] | None:
-+                     seed: int = None,
-+                     resolution: str = "VIDEO_RESOLUTION_720P") -> list[str] | None:
++                     seed: int = None) -> list[str] | None:
      """Submit V2V edit request. Returns list of media_ids."""
      if end_frame is None:
          end_frame = fps * duration
@@ -273,7 +263,6 @@ index 028d6af..278739a 100644
              "startFrameIndex": start_frame,
              "endFrameIndex": end_frame,
          },
-+        "resolution": resolution,
      }
      if ref_images:
          req_item["referenceImages"] = ref_images
@@ -299,7 +288,7 @@ index 0722b28..5d8b3b2 100644
          {
              "name": "generate_flow_video",
 -            "description": "Generate 1-20 Flow videos with duration, aspect, start asset, reference-media, and delivery-resolution control (720p native, 1080p or 4K via Flow's upsampler).",
-+            "description": "Generate 1-4 Flow videos at 360p or 720p, with optional free 1080p upscaling.",
++            "description": "Generate 1-4 Flow videos at 720p, with optional free 1080p upscaling.",
              "inputSchema": {
                  "type": "object",
                  "properties": {
@@ -317,10 +306,10 @@ index 0722b28..5d8b3b2 100644
                      "resolution": {
                          "type": "string",
 -                        "enum": ["720p", "1080p", "4k"],
-+                        "enum": ["360p", "720p", "1080p"],
++                        "enum": ["720p", "1080p"],
                          "default": "720p",
 -                        "description": "Delivery resolution. Flow generates at 720p; '1080p' (free) or '4k' (paid, higher tier) add Flow's upsampler pass and the high-resolution file is returned first."
-+                        "description": "360p or 720p base generation; 1080p generates at 720p and then uses Flow's free upsampler."
++                        "description": "720p base generation; 1080p generates at 720p and then uses Flow's free upsampler."
                      }
                  },
                  "required": ["prompt"]
@@ -333,7 +322,7 @@ index 01af7e1..05ac24a 100755
          {
              "name": "generate_flow_video",
 -            "description": "Generate 1-20 Flow videos with duration, aspect, start asset, seed, first-last frame, reference-media, and delivery-resolution control (720p native, 1080p or 4K via Flow's upsampler).",
-+            "description": "Generate 1-4 Flow videos at 360p or 720p, with optional free 1080p upscaling.",
++            "description": "Generate 1-4 Flow videos at 720p, with optional free 1080p upscaling.",
              "inputSchema": {
                  "type": "object",
                  "properties": {
@@ -351,10 +340,10 @@ index 01af7e1..05ac24a 100755
                      "resolution": {
                          "type": "string",
 -                        "enum": ["720p", "1080p", "4k"],
-+                        "enum": ["360p", "720p", "1080p"],
++                        "enum": ["720p", "1080p"],
                          "default": "720p",
 -                        "description": "Delivery resolution. Flow generates at 720p; '1080p' (free) or '4k' (paid, higher tier) add Flow's upsampler pass and the high-resolution file is returned first."
-+                        "description": "360p or 720p base generation; 1080p generates at 720p and then uses Flow's free upsampler."
++                        "description": "720p base generation; 1080p generates at 720p and then uses Flow's free upsampler."
                      }
                  },
                  "required": ["prompt"]
@@ -377,7 +366,7 @@ index 9eea3cb..8d5d0c3 100644
          description=(
 -            "Optional delivery resolution: '720p' (native, default), '1080p', or '4k'. "
 -            "Above 720p the finished video is run through Flow's upsampler pass, "
-+            "Optional delivery resolution: '360p', '720p' (default), or '1080p'. "
++            "Optional delivery resolution: '720p' (default) or '1080p'. "
 +            "At 1080p the finished 720p video is run through Flow's upsampler pass, "
              "the same step behind the Flow UI's high-resolution download."
          ),
@@ -395,7 +384,6 @@ index 3d81da5..64bdcaa 100644
 +    CREDITS_PER_UPSAMPLE,
 +    CREDITS_PER_VIDEO_BY_RESOLUTION,
 +    NATIVE_VIDEO_RESOLUTION,
-+    VIDEO_GENERATION_RESOLUTIONS,
 +)
  from flow_engine.generators.t2i import generate_image, download_image
  from flow_engine.generators.upsample import normalise_resolution, upsample_video
@@ -405,19 +393,18 @@ index 3d81da5..64bdcaa 100644
  
  
 +async def _resolve_generation_resolution(resolution):
-+    """Resolve the paid base generation and any free/paid delivery upscale."""
++    """Resolve 720p generation and its optional 1080p delivery upscale."""
 +    requested = str(resolution or NATIVE_VIDEO_RESOLUTION).strip().lower()
-+    if requested in VIDEO_GENERATION_RESOLUTIONS:
-+        return requested, VIDEO_GENERATION_RESOLUTIONS[requested], None
++    if requested == NATIVE_VIDEO_RESOLUTION:
++        return NATIVE_VIDEO_RESOLUTION, None
 +    if requested in {"1080", "1080p", "fhd", "fullhd", "full_hd"}:
-+        return (
-+            NATIVE_VIDEO_RESOLUTION,
-+            VIDEO_GENERATION_RESOLUTIONS[NATIVE_VIDEO_RESOLUTION],
-+            "1080p",
-+        )
++        return NATIVE_VIDEO_RESOLUTION, "1080p"
 +    raise HTTPException(
 +        status_code=400,
-+        detail="Unsupported video resolution; use '360p', '720p', or '1080p'.",
++        detail=(
++            "Unsupported video resolution; use '720p' or '1080p'. "
++            "Flow's internal 360p generation field has not been verified yet."
++        ),
 +    )
 +
 +
@@ -432,7 +419,7 @@ index 3d81da5..64bdcaa 100644
 -    upsample_tier = await _resolve_upsample_tier(req.resolution)
 +    # Resolve the paid base generation before anything is submitted. 1080p is
 +    # one 720p generation followed by Flow's free upsample pass.
-+    base_resolution, generation_resolution, upsample_tier = (
++    base_resolution, upsample_tier = (
 +        await _resolve_generation_resolution(req.resolution)
 +    )
  
@@ -459,7 +446,6 @@ index 3d81da5..64bdcaa 100644
 +                duration=req.duration,
 +                ref_media_ids=ref_media_ids or None,
 +                seed=req.seed,
-+                resolution=generation_resolution,
 +            )
          elif image_media_id and end_media_id:
              from flow_engine.generators.i2v import generate_video_fl
@@ -468,7 +454,6 @@ index 3d81da5..64bdcaa 100644
                  count=generation_count,
                  seed=req.seed,
                  video_model=req.video_model,
-+                resolution=generation_resolution,
              )
          elif ref_media_ids:
              from flow_engine.generators.i2v import generate_video_r2v
@@ -476,7 +461,7 @@ index 3d81da5..64bdcaa 100644
 +            media_ids = await generate_video_r2v(
 +                active_bridge, req.prompt, aspect_key, project_id, ref_media_ids,
 +                duration=req.duration, count=generation_count, seed=req.seed,
-+                video_model=req.video_model, resolution=generation_resolution,
++                video_model=req.video_model,
 +            )
          elif image_media_id:
              from flow_engine.generators.i2v import generate_video_i2v
@@ -484,7 +469,7 @@ index 3d81da5..64bdcaa 100644
 +            media_ids = await generate_video_i2v(
 +                active_bridge, req.prompt, aspect_key, project_id, image_media_id,
 +                duration=req.duration, count=generation_count, seed=req.seed,
-+                video_model=req.video_model, resolution=generation_resolution,
++                video_model=req.video_model,
 +            )
          else:
              from flow_engine.generators.t2v import generate_video
@@ -492,7 +477,7 @@ index 3d81da5..64bdcaa 100644
 +            media_ids = await generate_video(
 +                active_bridge, req.prompt, aspect_key, project_id,
 +                duration=req.duration, count=generation_count, seed=req.seed,
-+                video_model=req.video_model, resolution=generation_resolution,
++                video_model=req.video_model,
 +            )
      except Exception as e:
          if temp_img_path and os.path.exists(temp_img_path):

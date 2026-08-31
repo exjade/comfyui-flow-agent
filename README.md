@@ -22,7 +22,7 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 
 Images support `harbor_seal`, `narwhal`, and `gem_pix_2`; 1:1, 16:9, 9:16, 4:3, and 3:4; `count` 1-20; up to 10 references through `ref_media_ids`; and seeds from 0 to 4294967295. `gem_pix_2` may create extra internal candidates, but this client strictly limits ComfyUI output to the requested `count`.
 
-Video supports text-to-video, start image, first/last frames, up to 10 ingredient images, and editing with one source video plus optional references. Durations are 4, 6, 8, or 10 seconds in landscape or portrait, with 1-4 outputs per request. Base generation is available at 360p or 720p; selecting 1080p generates at 720p and then runs Flow's free upsample. The current upstream schema accepts only one source video.
+Video supports text-to-video, start image, first/last frames, up to 10 ingredient images, and editing with one source video plus optional references. Durations are 4, 6, 8, or 10 seconds in landscape or portrait, with 1-4 outputs per request. Base generation currently uses 720p; selecting 1080p generates at 720p and then runs Flow's free upsample. Google Flow's newer 360p option is temporarily hidden because its internal generation schema has not yet been captured; sending the upsampler-only `resolution` field to a generation endpoint is rejected. The current upstream schema accepts only one source video.
 
 ## Verified HTTP endpoints
 
@@ -97,7 +97,7 @@ Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline pr
 
 The selected video mode determines which image sockets are used. The node rejects connected inputs that the selected mode would ignore, before contacting the paid generation endpoint. For identity work, connect individual character shots (or the `images` batch from Character Creator) to `reference_images` and select `ingredients / reference images`. A flattened contact sheet is treated as one composite picture, not as six independent character references. `start image to video` animates one specific first frame and should receive a single shot.
 
-The node displays the estimated Flow cost before generation and updates it when duration, count, or resolution changes. The verified Omni 1.1 Flash cost per clip is `360p: 4/5/6/7` credits and `720p: 7/10/12/15` credits for `4/6/8/10` seconds respectively; the total is multiplied by count. Selecting 1080p uses the 720p generation cost and then runs Flow's free upsample. That creates a second asset in the Google Flow project, but the ComfyUI node returns and previews only the requested final resolution. The standalone Upsample node retains account-dependent 4K support.
+The node displays the estimated Flow cost before generation and updates it when duration, count, or resolution changes. The verified 720p Omni 1.1 Flash cost per clip is `7/10/12/15` credits for `4/6/8/10` seconds respectively; the total is multiplied by count. Selecting 1080p uses the 720p generation cost and then runs Flow's free upsample. That creates a second asset in the Google Flow project, but the ComfyUI node returns and previews only the requested final resolution. The standalone Upsample node retains account-dependent 4K support. Flow's cheaper 360p tier remains documented upstream but is intentionally unavailable here until its internal request field is verified.
 
 ## Character datasets
 

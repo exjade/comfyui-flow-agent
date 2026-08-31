@@ -64,7 +64,7 @@ foreach ($PatchName in @("flow-agent-media-reuse.patch", "flow-agent-video-refer
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {
         throw "Required compatibility patch is missing: $PatchPath"
     }
-    & $GitCommand.Source -C $FlowAgentRepositoryDir apply --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
+    & $GitCommand.Source -C $FlowAgentRepositoryDir apply --recount --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
     if ($LASTEXITCODE -ne 0) {
         throw "Flow Agent compatibility fixes are not installed ($PatchName). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, before starting Local or RunPod mode."
     }

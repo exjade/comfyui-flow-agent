@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.pytest-temp-*/
 scripts/.flow-local-state.json
 scripts/flow-local.config.json
 scripts/*.log
