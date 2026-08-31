@@ -971,7 +971,7 @@ class FlowOmniFlashVideo:
                 "seed": ("INT", {"default": 0, "min": 0, "max": 4294967295, "step": 1}),
                 "video_model_override": (
                     "STRING",
-                    {"default": "", "placeholder": "Blank = Omni Flash abra_t2v_<duration>s"},
+                    {"default": "", "placeholder": "Blank = automatic model for the selected mode"},
                 ),
                 "timeout_seconds": ("INT", {"default": 1200, "min": 60, "max": 7200, "step": 60}),
             },

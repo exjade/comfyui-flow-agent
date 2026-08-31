@@ -127,9 +127,49 @@ function Test-BackendApiKey([int]$BackendPort, [string]$ExpectedKey) {
     return $CorrectStatus -eq 200 -and $WrongStatus -eq 401
 }
 
+function Get-ProcessRecord([int]$ProcessId) {
+    return Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" `
+        -ErrorAction SilentlyContinue
+}
+
+function Test-ManagedFlowProcess($ProcessRecord) {
+    if (-not $ProcessRecord) { return $false }
+    $CommandLine = [string]$ProcessRecord.CommandLine
+    $ExecutablePath = [string]$ProcessRecord.ExecutablePath
+    $ResolvedRoot = [IO.Path]::GetFullPath($FlowAgentDir).TrimEnd('\')
+    if ($ExecutablePath.StartsWith($ResolvedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ($CommandLine.IndexOf($ResolvedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        return $true
+    }
+    return $CommandLine -match '(?i)(uv\s+run\s+python\s+main\.py|python(?:\.exe)?[^\r\n]*\smain\.py)'
+}
+
+function Stop-ManagedListener([int]$ListenerPort) {
+    $Listener = Get-NetTCPConnection -LocalPort $ListenerPort -State Listen `
+        -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $Listener) { return }
+    $Owner = Get-ProcessRecord -ProcessId ([int]$Listener.OwningProcess)
+    if (-not (Test-ManagedFlowProcess $Owner)) {
+        throw "Port $ListenerPort is already used by another program: $($Owner.CommandLine)"
+    }
+    Write-Host "Stopping stale Flow Agent listener on port $ListenerPort (PID $($Listener.OwningProcess))." -ForegroundColor Yellow
+    Stop-Process -Id $Listener.OwningProcess -Force -ErrorAction SilentlyContinue
+}
+
 $ProjectId = Get-DotEnvValue "DEFAULT_PROJECT"
 if ([string]::IsNullOrWhiteSpace($ProjectId)) {
     throw "Add DEFAULT_PROJECT=<project-id> to the Flow Agent .env file."
+}
+$BridgePortText = Get-DotEnvValue "WS_PORT"
+$BridgePort = 9227
+if (-not [string]::IsNullOrWhiteSpace($BridgePortText)) {
+    $ParsedBridgePort = 0
+    if (-not [int]::TryParse($BridgePortText, [ref]$ParsedBridgePort)) {
+        throw "WS_PORT must be an integer; received '$BridgePortText'."
+    }
+    $BridgePort = $ParsedBridgePort
 }
 
 if (Test-Path -LiteralPath $NgrokExe -PathType Leaf) {
@@ -199,15 +239,10 @@ if ($Health -and $PreviousPublicUrl -eq $PublicUrl -and $BackendAcceptsCurrentKe
     if ($Health -and -not $BackendAcceptsCurrentKey) {
         Write-Host "The running backend uses different authentication settings and will be restarted." -ForegroundColor Yellow
     }
-    $Listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($Listener) {
-        $Owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($Listener.OwningProcess)"
-        if ($Owner.CommandLine -notmatch "main\.py") {
-            throw "Port $Port is already used by another program: $($Owner.CommandLine)"
-        }
-        Stop-Process -Id $Listener.OwningProcess -Force
-        Start-Sleep -Seconds 1
+    foreach ($ListenerPort in @($Port, $BridgePort) | Select-Object -Unique) {
+        Stop-ManagedListener -ListenerPort $ListenerPort
     }
+    Start-Sleep -Seconds 1
 
     $UvCommand = Get-Command uv -ErrorAction Stop
     $FlowProcess = Start-Process `

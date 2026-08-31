@@ -175,6 +175,8 @@ The uninstaller never removes or modifies Windows Python, external environments,
   - `first + last frame` requires `start_image` and `end_image`.
   - `ingredients / reference images` requires at least one reference input.
   - `edit source video` requires `source_video_media_id` or `source_video_path`.
+  - Leave `video_model_override` blank to select the correct Flow model for the chosen mode and orientation. Text-to-video and image-conditioned modes do not share the same model key.
+  - A requested upscale returns one final delivery to ComfyUI. The native 720p source remains in Flow Agent history instead of appearing as a second generated video.
 - Preserve returned `media_id` values to reuse media without uploading again.
 
 ## Tests

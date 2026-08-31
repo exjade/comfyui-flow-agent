@@ -1,0 +1,86 @@
+diff --git a/flow_engine/config.py b/flow_engine/config.py
+--- a/flow_engine/config.py
++++ b/flow_engine/config.py
+@@ -133,4 +133,23 @@ MODELS = {
+     "edit": "abra_edit",
+ }
+ 
++# Flow uses mode-specific model keys for image-conditioned video.  Sending the
++# legacy text-to-video ``abra_t2v_*`` key to an image/reference endpoint can be
++# accepted while silently producing a video unrelated to the supplied image.
++# Keep these keys overridable because Flow's browser API is undocumented.
++VIDEO_INPUT_MODELS = {
++    "i2v": {
++        "landscape": os.environ.get("VIDEO_I2V_LANDSCAPE_MODEL", "veo_3_1_i2v_s_fast"),
++        "portrait": os.environ.get("VIDEO_I2V_PORTRAIT_MODEL", "veo_3_1_i2v_s_fast_portrait"),
++    },
++    "first_last": {
++        "landscape": os.environ.get("VIDEO_FIRST_LAST_LANDSCAPE_MODEL", "veo_3_1_i2v_s_fast_fl"),
++        "portrait": os.environ.get("VIDEO_FIRST_LAST_PORTRAIT_MODEL", "veo_3_1_i2v_s_fast_portrait_fl"),
++    },
++    "reference": {
++        "landscape": os.environ.get("VIDEO_REFERENCE_LANDSCAPE_MODEL", "veo_3_0_r2v_fast"),
++        "portrait": os.environ.get("VIDEO_REFERENCE_PORTRAIT_MODEL", "veo_3_0_r2v_fast_portrait"),
++    },
++}
++
+ # ─── Video upsampling (native generation is 720p) ─────────────
+diff --git a/flow_engine/generators/i2v.py b/flow_engine/generators/i2v.py
+--- a/flow_engine/generators/i2v.py
++++ b/flow_engine/generators/i2v.py
+@@ -3,5 +3,5 @@
+ import base64
+ import logging
+ import os
+-from ..config import CLIENT_CTX, ENDPOINTS
++from ..config import CLIENT_CTX, ENDPOINTS, VIDEO_INPUT_MODELS
+ from .common import build_client_context, build_generation_context, resolve_seed
+@@ -11,4 +11,10 @@
+ log = logging.getLogger("flow_engine.generators.i2v")
+ 
+ 
++def _conditioned_video_model(mode: str, aspect: str) -> str:
++    """Return the current Flow model for one image-conditioned video mode."""
++    orientation = "portrait" if str(aspect).upper().endswith("PORTRAIT") else "landscape"
++    return VIDEO_INPUT_MODELS[mode][orientation]
++
++
+ async def upload_image(
+@@ -80,3 +86,3 @@ async def generate_video_i2v(bridge, prompt: str, aspect: str, project_id: str,
+                               seed: int = None, video_model: str = None) -> list[str] | None:
+     """Generate video from a start image. Returns list of media_ids."""
+-    model_key = video_model or f"abra_t2v_{duration}s"
++    model_key = video_model or _conditioned_video_model("i2v", aspect)
+@@ -138,3 +144,3 @@ async def generate_video_fl(bridge, prompt: str, aspect: str, project_id: str,
+     Video transitions smoothly from start_image to end_image.
+     """
+-    model_key = video_model or f"abra_t2v_{duration}s"
++    model_key = video_model or _conditioned_video_model("first_last", aspect)
+@@ -194,3 +200,3 @@ async def generate_video_r2v(bridge, prompt: str, aspect: str, project_id: str,
+                               seed: int = None, video_model: str = None) -> list[str] | None:
+     """Generate video from reference images (character/style consistency)."""
+-    model_key = video_model or f"abra_t2v_{duration}s"
++    model_key = video_model or _conditioned_video_model("reference", aspect)
+diff --git a/flow_server/routes/generation.py b/flow_server/routes/generation.py
+--- a/flow_server/routes/generation.py
++++ b/flow_server/routes/generation.py
+@@ -924,7 +924,16 @@ async def _generate_video(req: VideoGenerationRequest, x_client_id: Optional[str
+         failures = [reason for entry, reason in upsampled if not entry and reason]
+ 
+         if high_res:
+-            # Lead with the upsampled files so clients that consume data[0] as
+-            # "the" output write the high-resolution video.
+-            data_outputs = high_res + data_outputs
++            # The native clips are already retained in history.  Return one
++            # delivery per requested clip so ComfyUI does not present the
++            # native file and its upscale as two separate generations.
++            high_res_by_source = {
++                entry.get("source_media_id"): entry
++                for entry in high_res
++                if entry.get("source_media_id")
++            }
++            data_outputs = [
++                high_res_by_source.get(entry.get("media_id"), entry)
++                for entry in data_outputs
++            ]
+         if failures:

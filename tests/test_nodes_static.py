@@ -32,3 +32,11 @@ def test_video_preview_avoids_duplicate_native_preview():
 
     assert "Array.isArray(message?.images)" in source
     assert "const items = message?.gifs;" in source
+
+
+def test_video_model_override_no_longer_advertises_text_model_for_references():
+    source_path = Path(__file__).resolve().parents[1] / "nodes.py"
+    source = source_path.read_text(encoding="utf-8")
+
+    assert "automatic model for the selected mode" in source
+    assert "Blank = Omni Flash abra_t2v_<duration>s" not in source
