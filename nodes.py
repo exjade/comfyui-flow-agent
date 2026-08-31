@@ -988,7 +988,7 @@ class FlowOmniFlashVideo:
                 "duration": (VIDEO_DURATIONS, {"default": 8}),
                 "count": ("INT", {"default": 1, "min": 1, "max": 20, "step": 1}),
                 "resolution": (VIDEO_RESOLUTIONS, {"default": "720p"}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 4294967295, "step": 1}),
+                "seed": ("INT", {"default": 43, "min": 43, "max": 43, "step": 1}),
                 "video_model_override": (
                     "STRING",
                     {"default": "", "placeholder": "Blank = automatic model for the selected mode"},
@@ -1123,7 +1123,7 @@ class FlowOmniFlashVideo:
             aspect=aspect_ratio,
             count=count,
             duration=duration,
-            seed=seed,
+            seed=43,
             resolution=resolution,
             start_media_id=start_id,
             end_media_id=end_id,

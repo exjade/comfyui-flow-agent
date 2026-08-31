@@ -6,6 +6,19 @@ const FLOW_VIDEO_NODES = new Set([
     "FlowVideoUpsample",
 ]);
 
+function forceOmniSeed(node) {
+    const seedWidget = node.widgets?.find((widget) => widget.name === "seed");
+    if (seedWidget) {
+        seedWidget.value = 43;
+    }
+    const controlWidget = node.widgets?.find(
+        (widget) => widget.name === "control_after_generate",
+    );
+    if (controlWidget) {
+        controlWidget.value = "fixed";
+    }
+}
+
 function videoUrl(item) {
     const params = new URLSearchParams({
         filename: item.filename,
@@ -128,5 +141,19 @@ app.registerExtension({
             previousExecuted?.apply(this, arguments);
             showPreview(this, message);
         };
+
+        if (nodeData.name === "FlowOmniFlashVideo") {
+            const previousCreated = nodeType.prototype.onNodeCreated;
+            nodeType.prototype.onNodeCreated = function () {
+                previousCreated?.apply(this, arguments);
+                forceOmniSeed(this);
+            };
+
+            const previousConfigure = nodeType.prototype.onConfigure;
+            nodeType.prototype.onConfigure = function () {
+                previousConfigure?.apply(this, arguments);
+                forceOmniSeed(this);
+            };
+        }
     },
 });

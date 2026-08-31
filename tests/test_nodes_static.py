@@ -49,3 +49,22 @@ def test_video_can_reuse_existing_flow_media_ids_without_uploading_pixels():
     assert '"reference_media_ids": (' in source
     assert "direct_reference_ids = _parse_media_ids(reference_media_ids)" in source
     assert "direct_reference_ids + uploaded_reference_ids" in source
+
+
+def test_omni_video_seed_is_permanently_fixed_to_43():
+    source_path = Path(__file__).resolve().parents[1] / "nodes.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    omni_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FlowOmniFlashVideo"
+    )
+    source = ast.get_source_segment(source_path.read_text(encoding="utf-8"), omni_class)
+
+    assert '"seed": ("INT", {"default": 43, "min": 43, "max": 43' in source
+    assert "seed=43" in source
+
+    preview_source = (
+        Path(__file__).resolve().parents[1] / "web" / "flow_video_preview.js"
+    ).read_text(encoding="utf-8")
+    assert "seedWidget.value = 43" in preview_source
+    assert 'controlWidget.value = "fixed"' in preview_source
