@@ -1,26 +1,25 @@
 diff --git a/flow_engine/config.py b/flow_engine/config.py
 --- a/flow_engine/config.py
 +++ b/flow_engine/config.py
-@@ -133,4 +133,23 @@ MODELS = {
+@@ -133,4 +133,22 @@ MODELS = {
      "edit": "abra_edit",
  }
  
-+# Flow uses mode-specific model keys for image-conditioned video.  Sending the
-+# legacy text-to-video ``abra_t2v_*`` key to an image/reference endpoint can be
-+# accepted while silently producing a video unrelated to the supplied image.
-+# Keep these keys overridable because Flow's browser API is undocumented.
++# Flow's model catalogue changes independently of this project. The current
++# Omni duration key is used by default in i2v.py; these optional values allow a
++# captured replacement key to be selected without another code update.
 +VIDEO_INPUT_MODELS = {
 +    "i2v": {
-+        "landscape": os.environ.get("VIDEO_I2V_LANDSCAPE_MODEL", "veo_3_1_i2v_s_fast"),
-+        "portrait": os.environ.get("VIDEO_I2V_PORTRAIT_MODEL", "veo_3_1_i2v_s_fast_portrait"),
++        "landscape": os.environ.get("VIDEO_I2V_LANDSCAPE_MODEL", "").strip(),
++        "portrait": os.environ.get("VIDEO_I2V_PORTRAIT_MODEL", "").strip(),
 +    },
 +    "first_last": {
-+        "landscape": os.environ.get("VIDEO_FIRST_LAST_LANDSCAPE_MODEL", "veo_3_1_i2v_s_fast_fl"),
-+        "portrait": os.environ.get("VIDEO_FIRST_LAST_PORTRAIT_MODEL", "veo_3_1_i2v_s_fast_portrait_fl"),
++        "landscape": os.environ.get("VIDEO_FIRST_LAST_LANDSCAPE_MODEL", "").strip(),
++        "portrait": os.environ.get("VIDEO_FIRST_LAST_PORTRAIT_MODEL", "").strip(),
 +    },
 +    "reference": {
-+        "landscape": os.environ.get("VIDEO_REFERENCE_LANDSCAPE_MODEL", "veo_3_0_r2v_fast"),
-+        "portrait": os.environ.get("VIDEO_REFERENCE_PORTRAIT_MODEL", "veo_3_0_r2v_fast_portrait"),
++        "landscape": os.environ.get("VIDEO_REFERENCE_LANDSCAPE_MODEL", "").strip(),
++        "portrait": os.environ.get("VIDEO_REFERENCE_PORTRAIT_MODEL", "").strip(),
 +    },
 +}
 +
@@ -33,16 +32,17 @@ diff --git a/flow_engine/generators/i2v.py b/flow_engine/generators/i2v.py
  import logging
  import os
 -from ..config import CLIENT_CTX, ENDPOINTS
-+from ..config import CLIENT_CTX, ENDPOINTS, VIDEO_INPUT_MODELS
++from ..config import CLIENT_CTX, ENDPOINTS, MODELS, VIDEO_INPUT_MODELS
  from .common import build_client_context, build_generation_context, resolve_seed
-@@ -11,4 +11,10 @@
+@@ -11,4 +11,11 @@
  log = logging.getLogger("flow_engine.generators.i2v")
  
  
-+def _conditioned_video_model(mode: str, aspect: str) -> str:
-+    """Return the current Flow model for one image-conditioned video mode."""
++def _conditioned_video_model(mode: str, aspect: str, duration: int) -> str:
++    """Return an explicit override or Flow's current Omni duration model."""
 +    orientation = "portrait" if str(aspect).upper().endswith("PORTRAIT") else "landscape"
-+    return VIDEO_INPUT_MODELS[mode][orientation]
++    override = VIDEO_INPUT_MODELS[mode][orientation]
++    return override or MODELS["t2v"].get(duration, f"abra_t2v_{duration}s")
 +
 +
  async def upload_image(
@@ -50,17 +50,32 @@ diff --git a/flow_engine/generators/i2v.py b/flow_engine/generators/i2v.py
                                seed: int = None, video_model: str = None) -> list[str] | None:
      """Generate video from a start image. Returns list of media_ids."""
 -    model_key = video_model or f"abra_t2v_{duration}s"
-+    model_key = video_model or _conditioned_video_model("i2v", aspect)
++    model_key = video_model or _conditioned_video_model("i2v", aspect, duration)
+@@ -87,3 +93,3 @@ async def generate_video_i2v(bridge, prompt: str, aspect: str, project_id: str,
+         requests.append({
+             "aspectRatio": aspect,
+-            "textInput": {"structuredPrompt": {"parts": [{"text": prompt}]}},
++            "textInput": {"prompt": prompt},
 @@ -138,3 +144,3 @@ async def generate_video_fl(bridge, prompt: str, aspect: str, project_id: str,
      Video transitions smoothly from start_image to end_image.
      """
 -    model_key = video_model or f"abra_t2v_{duration}s"
-+    model_key = video_model or _conditioned_video_model("first_last", aspect)
++    model_key = video_model or _conditioned_video_model("first_last", aspect, duration)
+@@ -145,3 +151,3 @@ async def generate_video_fl(bridge, prompt: str, aspect: str, project_id: str,
+         requests.append({
+             "aspectRatio": aspect,
+-            "textInput": {"structuredPrompt": {"parts": [{"text": prompt}]}},
++            "textInput": {"prompt": prompt},
 @@ -194,3 +200,3 @@ async def generate_video_r2v(bridge, prompt: str, aspect: str, project_id: str,
                                seed: int = None, video_model: str = None) -> list[str] | None:
      """Generate video from reference images (character/style consistency)."""
 -    model_key = video_model or f"abra_t2v_{duration}s"
-+    model_key = video_model or _conditioned_video_model("reference", aspect)
++    model_key = video_model or _conditioned_video_model("reference", aspect, duration)
+@@ -205,3 +211,3 @@ async def generate_video_r2v(bridge, prompt: str, aspect: str, project_id: str,
+         requests.append({
+             "aspectRatio": aspect,
+-            "textInput": {"structuredPrompt": {"parts": [{"text": prompt}]}},
++            "textInput": {"prompt": prompt},
 diff --git a/flow_server/routes/generation.py b/flow_server/routes/generation.py
 --- a/flow_server/routes/generation.py
 +++ b/flow_server/routes/generation.py
