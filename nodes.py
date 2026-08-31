@@ -40,7 +40,7 @@ VIDEO_MODES = (
 )
 VIDEO_ASPECTS = ("landscape", "portrait")
 VIDEO_DURATIONS = (4, 6, 8, 10)
-VIDEO_RESOLUTIONS = ("720p", "1080p", "4k")
+VIDEO_RESOLUTIONS = ("360p", "720p", "1080p")
 MAX_REFERENCE_IMAGES = 10
 
 
@@ -986,7 +986,7 @@ class FlowOmniFlashVideo:
                 "mode": (VIDEO_MODES, {"default": "text to video"}),
                 "aspect_ratio": (VIDEO_ASPECTS, {"default": "landscape"}),
                 "duration": (VIDEO_DURATIONS, {"default": 8}),
-                "count": ("INT", {"default": 1, "min": 1, "max": 20, "step": 1}),
+                "count": ("INT", {"default": 1, "min": 1, "max": 4, "step": 1}),
                 "resolution": (VIDEO_RESOLUTIONS, {"default": "720p"}),
                 "seed": ("INT", {"default": 43, "min": 43, "max": 43, "step": 1}),
                 "video_model_override": (

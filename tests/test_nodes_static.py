@@ -68,3 +68,27 @@ def test_omni_video_seed_is_permanently_fixed_to_43():
     ).read_text(encoding="utf-8")
     assert "seedWidget.value = 43" in preview_source
     assert 'controlWidget.value = "fixed"' in preview_source
+
+
+def test_omni_video_matches_flow_count_and_resolution_options():
+    source_path = Path(__file__).resolve().parents[1] / "nodes.py"
+    source_text = source_path.read_text(encoding="utf-8")
+    tree = ast.parse(source_text)
+    omni_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FlowOmniFlashVideo"
+    )
+    omni_source = ast.get_source_segment(source_text, omni_class)
+
+    assert 'VIDEO_RESOLUTIONS = ("360p", "720p", "1080p")' in source_text
+    assert '"count": ("INT", {"default": 1, "min": 1, "max": 4' in omni_source
+
+
+def test_video_preview_shows_dynamic_credit_estimate():
+    script_path = Path(__file__).resolve().parents[1] / "web" / "flow_video_preview.js"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert '"360p": { 4: 4, 6: 5, 8: 6, 10: 7 }' in source
+    assert '"720p": { 4: 7, 6: 10, 8: 12, 10: 15 }' in source
+    assert "Costo estimado de Flow" in source
+    assert "upscale 1080p sin costo" in source

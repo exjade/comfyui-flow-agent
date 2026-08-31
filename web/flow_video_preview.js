@@ -6,6 +6,78 @@ const FLOW_VIDEO_NODES = new Set([
     "FlowVideoUpsample",
 ]);
 
+const VIDEO_CREDITS = {
+    "360p": { 4: 4, 6: 5, 8: 6, 10: 7 },
+    "720p": { 4: 7, 6: 10, 8: 12, 10: 15 },
+};
+
+function widgetValue(node, name, fallback) {
+    return node.widgets?.find((widget) => widget.name === name)?.value ?? fallback;
+}
+
+function updateCreditEstimate(node) {
+    const estimate = node.flowAgentCreditEstimate;
+    if (!estimate) {
+        return;
+    }
+    const resolution = String(widgetValue(node, "resolution", "720p"));
+    const baseResolution = resolution === "1080p" ? "720p" : resolution;
+    const duration = Number(widgetValue(node, "duration", 8));
+    const count = Math.max(1, Math.min(4, Number(widgetValue(node, "count", 1)) || 1));
+    const costEach = VIDEO_CREDITS[baseResolution]?.[duration];
+    if (costEach == null) {
+        estimate.textContent = "Costo estimado de Flow: no disponible";
+        return;
+    }
+    const total = costEach * count;
+    const upscaleNote = resolution === "1080p" ? " + upscale 1080p sin costo" : "";
+    estimate.textContent = `Costo estimado de Flow: ${total} créditos (${costEach} × ${count})${upscaleNote}`;
+}
+
+function createCreditEstimate(node) {
+    if (node.flowAgentCreditEstimate) {
+        updateCreditEstimate(node);
+        return;
+    }
+
+    const label = document.createElement("div");
+    label.style.boxSizing = "border-box";
+    label.style.width = "100%";
+    label.style.padding = "7px 10px";
+    label.style.borderRadius = "6px";
+    label.style.background = "#171717";
+    label.style.color = "#f0d77a";
+    label.style.fontSize = "12px";
+    label.style.fontWeight = "600";
+
+    const estimateWidget = node.addDOMWidget(
+        "flow_agent_credit_estimate",
+        "credits",
+        label,
+        {
+            hideOnZoom: false,
+            getMinHeight: () => 32,
+            getMaxHeight: () => 32,
+        },
+    );
+    estimateWidget.serialize = false;
+    node.flowAgentCreditEstimate = label;
+
+    for (const name of ["resolution", "duration", "count"]) {
+        const widget = node.widgets?.find((candidate) => candidate.name === name);
+        if (!widget || widget.flowAgentCreditCallbackWrapped) {
+            continue;
+        }
+        const previousCallback = widget.callback;
+        widget.callback = function () {
+            previousCallback?.apply(this, arguments);
+            updateCreditEstimate(node);
+        };
+        widget.flowAgentCreditCallbackWrapped = true;
+    }
+    updateCreditEstimate(node);
+}
+
 function forceOmniSeed(node) {
     const seedWidget = node.widgets?.find((widget) => widget.name === "seed");
     if (seedWidget) {
@@ -147,12 +219,15 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 previousCreated?.apply(this, arguments);
                 forceOmniSeed(this);
+                createCreditEstimate(this);
             };
 
             const previousConfigure = nodeType.prototype.onConfigure;
             nodeType.prototype.onConfigure = function () {
                 previousConfigure?.apply(this, arguments);
                 forceOmniSeed(this);
+                createCreditEstimate(this);
+                queueMicrotask(() => updateCreditEstimate(this));
             };
         }
     },
