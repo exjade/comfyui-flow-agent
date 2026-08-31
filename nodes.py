@@ -58,12 +58,13 @@ def _validate_video_mode_connections(
     end_image=None,
     reference_images=None,
     extra_reference_images=(),
+    reference_media_ids=(),
 ) -> None:
     """Reject connected image inputs that the selected paid video mode would ignore."""
 
     has_start = start_image is not None
     has_end = end_image is not None
-    has_references = reference_images is not None or any(
+    has_references = bool(reference_media_ids) or reference_images is not None or any(
         image is not None for image in extra_reference_images
     )
 
@@ -85,6 +86,25 @@ def _validate_video_mode_connections(
             f"Reference images are connected, but mode {mode!r} would ignore them. "
             "Select 'ingredients / reference images' before generating."
         )
+
+
+def _parse_media_ids(value: str, *, maximum: int = MAX_REFERENCE_IMAGES) -> list[str]:
+    """Parse JSON, comma-separated, or newline-separated Flow media IDs."""
+    raw = (value or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = raw.replace(",", "\n").splitlines()
+    if isinstance(parsed, str):
+        parsed = [parsed]
+    if not isinstance(parsed, list):
+        raise FlowAgentError("reference_media_ids must be a JSON list or separated by commas/new lines.")
+    media_ids = list(dict.fromkeys(str(item).strip() for item in parsed if str(item).strip()))
+    if len(media_ids) > maximum:
+        raise FlowAgentError(f"A maximum of {maximum} reference media IDs is supported.")
+    return media_ids
 
 
 def _upload_image_batch(client, image, *, started, timeout_seconds, max_images=10):
@@ -980,6 +1000,14 @@ class FlowOmniFlashVideo:
                 "end_image": ("IMAGE",),
                 "reference_images": ("IMAGE",),
                 **{f"reference_image_{index}": ("IMAGE",) for index in range(2, 11)},
+                "reference_media_ids": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "placeholder": "Existing Flow media IDs (JSON, comma, or one per line)",
+                    },
+                ),
                 "source_video_media_id": ("STRING", {"default": ""}),
                 "source_video_path": ("STRING", {"default": ""}),
             },
@@ -1010,6 +1038,7 @@ class FlowOmniFlashVideo:
         start_image=None,
         end_image=None,
         reference_images=None,
+        reference_media_ids="",
         source_video_media_id="",
         source_video_path="",
         **kwargs,
@@ -1027,12 +1056,14 @@ class FlowOmniFlashVideo:
         extra_reference_images = tuple(
             kwargs.get(f"reference_image_{index}") for index in range(2, 11)
         )
+        direct_reference_ids = _parse_media_ids(reference_media_ids)
         _validate_video_mode_connections(
             mode,
             start_image=start_image,
             end_image=end_image,
             reference_images=reference_images,
             extra_reference_images=extra_reference_images,
+            reference_media_ids=direct_reference_ids,
         )
 
         client = FlowAgentClient.from_env()
@@ -1055,15 +1086,22 @@ class FlowOmniFlashVideo:
                 raise FlowAgentError("First + last frame mode requires end_image.")
             end_id = ids[0]
         if mode in {"ingredients / reference images", "edit source video"}:
-            reference_ids = _upload_image_sources(
+            uploaded_reference_ids = _upload_image_sources(
                 client,
                 [reference_images]
                 + list(extra_reference_images),
                 started=started,
                 timeout_seconds=timeout_seconds,
             )
+            reference_ids = list(dict.fromkeys(direct_reference_ids + uploaded_reference_ids))
+            if len(reference_ids) > MAX_REFERENCE_IMAGES:
+                raise FlowAgentError(
+                    f"A maximum of {MAX_REFERENCE_IMAGES} combined reference images is supported."
+                )
             if mode == "ingredients / reference images" and not reference_ids:
-                raise FlowAgentError("Ingredients mode requires reference_images (up to 10).")
+                raise FlowAgentError(
+                    "Ingredients mode requires reference_images or reference_media_ids (up to 10)."
+                )
         if mode == "edit source video":
             source_id, source_path = source_video_media_id.strip(), source_video_path.strip()
             if source_id and source_path:

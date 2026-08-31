@@ -99,3 +99,194 @@ diff --git a/flow_server/routes/generation.py b/flow_server/routes/generation.py
 +                for entry in data_outputs
 +            ]
          if failures:
+diff --git a/flow_engine/generators/common.py b/flow_engine/generators/common.py
+--- a/flow_engine/generators/common.py
++++ b/flow_engine/generators/common.py
+@@ -5,6 +5,7 @@ Shared functions: client context builder, poll_status, download_video.
+ 
+ import asyncio
+ import base64
++import json
+ import logging
+ import os
+ import random
+@@ -20,4 +21,34 @@ from flow_server.media_types import sniff_media_type
+ log = logging.getLogger("flow_engine.generators")
+ 
+ 
++class VideoGenerationFailedError(RuntimeError):
++    """Raised when Flow accepts a video job but later marks it as failed."""
++
++
++def _failure_detail(media_item: dict) -> str:
++    """Extract useful, bounded error information from a Flow poll response."""
++    details = []
++
++    def visit(value, path=""):
++        if len(details) >= 8:
++            return
++        if isinstance(value, dict):
++            for key, child in value.items():
++                child_path = f"{path}.{key}" if path else str(key)
++                lowered = str(key).lower()
++                if any(word in lowered for word in ("error", "reason", "message", "status")):
++                    if isinstance(child, (str, int, float, bool)) and str(child):
++                        details.append(f"{child_path}={child}")
++                    elif child not in (None, {}, []):
++                        encoded = json.dumps(child, ensure_ascii=True, separators=(",", ":"))
++                        details.append(f"{child_path}={encoded[:500]}")
++                visit(child, child_path)
++        elif isinstance(value, list):
++            for index, child in enumerate(value[:8]):
++                visit(child, f"{path}[{index}]")
++
++    visit(media_item)
++    return "; ".join(dict.fromkeys(details))[:1800]
++
++
+ def resolve_seed(seed: int | None, index: int = 0) -> int:
+@@ -75,7 +106,21 @@ async def poll_status(bridge, media_id: str, project_id: str) -> bool:
+                 log.info("Video ready! (%ds)", elapsed)
+                 return True
+             elif "FAILED" in status or "BLOCKED" in status:
+-                log.error("Failed: %s", status)
+-                return False
++                detail = _failure_detail(media[0])
++                failure_reasons = meta.get("failureReasons", [])
++                if "IDENTIFIABLE_PERSON_SAFETY" in failure_reasons:
++                    message = (
++                        "Google Flow blocked the video because the reference appears to "
++                        "contain an identifiable real person. No video was produced. "
++                        "Use a fictional or AI-generated character reference; changing "
++                        "the seed or retrying the same real-person reference will not "
++                        "remove this provider safety restriction."
++                    )
++                else:
++                    message = f"Google Flow video {media_id} failed with {status}"
++                if detail:
++                    message += f": {detail}"
++                log.error("%s", message)
++                raise VideoGenerationFailedError(message)
+ 
+         elapsed = int(time.time() - start)
+diff --git a/flow_server/routes/media.py b/flow_server/routes/media.py
+--- a/flow_server/routes/media.py
++++ b/flow_server/routes/media.py
+@@ -13,4 +13,4 @@ import logging
+ from fastapi import APIRouter, HTTPException, Depends
+ from fastapi.responses import FileResponse
+ 
+-from flow_engine import DEFAULT_PROJECT
++from flow_engine import DEFAULT_PROJECT, ENDPOINTS
+@@ -44,4 +44,16 @@ async def resolve_media_url(media_id: str):
+     return {"media_id": media_id, "url": url}
+ 
+ 
++@router.get("/v1/media/{media_id}/status", dependencies=[Depends(verify_api_key)])
++async def resolve_media_status(media_id: str):
++    """Return Flow's raw status for an existing media ID without creating a job."""
++    active_bridge = await get_active_bridge()
++    project_id = os.environ.get("DEFAULT_PROJECT", DEFAULT_PROJECT)
++    return await active_bridge.api_request(
++        ENDPOINTS["poll_status"],
++        {"media": [{"name": media_id, "projectId": project_id}]},
++        captcha_action="",
++    )
++
++
+ @router.post("/v1/upload", dependencies=[Depends(verify_api_key)])
+diff --git a/flow_server/routes/system.py b/flow_server/routes/system.py
+--- a/flow_server/routes/system.py
++++ b/flow_server/routes/system.py
+@@ -146,4 +146,20 @@ async def get_flow_credits(x_client_id: Optional[str] = Header(None, alias="X-Cl
+     }
+ 
+ 
++@router.get("/v1/flow-app-config", dependencies=[Depends(verify_api_key)])
++async def get_flow_app_config(x_client_id: Optional[str] = Header(None, alias="X-Client-Id")):
++    """Read Flow's live model catalogue without starting a paid generation."""
++    active_bridge = await get_active_bridge()
++    try:
++        return await active_bridge.api_request(
++            "/v1/flow/appConfig",
++            body=None,
++            captcha_action=None,
++            method="GET",
++            client_id=x_client_id,
++        )
++    except Exception as exc:
++        raise HTTPException(status_code=502, detail=str(exc)) from exc
++
++
+ @router.post("/v1/refresh-tokens", dependencies=[Depends(verify_api_key)])
+diff --git a/tests/test_video_poll_diagnostics.py b/tests/test_video_poll_diagnostics.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_video_poll_diagnostics.py
+@@ -0,0 +1,66 @@
++import unittest
++
++from flow_engine.generators.common import (
++    VideoGenerationFailedError,
++    _failure_detail,
++    poll_status,
++)
++
++
++class FailedPollBridge:
++    async def api_request(self, path, body=None, captcha_action=None, method="POST"):
++        return {
++            "status": 200,
++            "data": {
++                "media": [{
++                    "name": "failed-media",
++                    "mediaMetadata": {
++                        "mediaStatus": {
++                            "mediaGenerationStatus": "MEDIA_GENERATION_STATUS_FAILED",
++                            "generationError": {
++                                "reason": "MODEL_NOT_AVAILABLE",
++                                "message": "The selected model cannot process reference images",
++                            },
++                        }
++                    },
++                }]
++            },
++        }
++
++
++class VideoPollDiagnosticTests(unittest.IsolatedAsyncioTestCase):
++    async def test_failed_generation_keeps_google_reason(self):
++        with self.assertRaises(VideoGenerationFailedError) as exc:
++            await poll_status(FailedPollBridge(), "failed-media", "project")
++
++        message = str(exc.exception)
++        self.assertIn("failed-media", message)
++        self.assertIn("MODEL_NOT_AVAILABLE", message)
++        self.assertIn("reference images", message)
++
++    async def test_identifiable_person_failure_has_actionable_message(self):
++        bridge = FailedPollBridge()
++        original = bridge.api_request
++
++        async def with_safety_reason(*args, **kwargs):
++            result = await original(*args, **kwargs)
++            result["data"]["media"][0]["mediaMetadata"]["mediaStatus"][
++                "failureReasons"
++            ] = ["IDENTIFIABLE_PERSON_SAFETY"]
++            return result
++
++        bridge.api_request = with_safety_reason
++        with self.assertRaises(VideoGenerationFailedError) as exc:
++            await poll_status(bridge, "failed-media", "project")
++
++        self.assertIn("identifiable real person", str(exc.exception))
++        self.assertIn("fictional or AI-generated character", str(exc.exception))
++
++    def test_failure_detail_is_bounded(self):
++        detail = _failure_detail({"errorMessage": "x" * 5000})
++        self.assertLessEqual(len(detail), 1800)
++        self.assertIn("errorMessage", detail)
++
++
++if __name__ == "__main__":
++    unittest.main()

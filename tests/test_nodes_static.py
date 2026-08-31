@@ -40,3 +40,12 @@ def test_video_model_override_no_longer_advertises_text_model_for_references():
 
     assert "automatic model for the selected mode" in source
     assert "Blank = Omni Flash abra_t2v_<duration>s" not in source
+
+
+def test_video_can_reuse_existing_flow_media_ids_without_uploading_pixels():
+    source_path = Path(__file__).resolve().parents[1] / "nodes.py"
+    source = source_path.read_text(encoding="utf-8")
+
+    assert '"reference_media_ids": (' in source
+    assert "direct_reference_ids = _parse_media_ids(reference_media_ids)" in source
+    assert "direct_reference_ids + uploaded_reference_ids" in source

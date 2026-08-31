@@ -154,6 +154,46 @@ def test_video_mode_rejects_start_image_before_paid_request(monkeypatch):
         )
 
 
+def test_video_reuses_existing_flow_media_id_without_upload(monkeypatch):
+    class ReuseVideoClient:
+        generation_args = None
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+        def assert_ready(self, timeout_seconds):
+            return {"status": "healthy"}
+
+        def upload_image(self, *_args, **_kwargs):
+            raise AssertionError("An existing Flow media ID must not be uploaded again")
+
+        def generate_videos(self, **kwargs):
+            type(self).generation_args = kwargs
+            return {"status": "succeeded", "data": []}
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", ReuseVideoClient)
+    monkeypatch.setattr(nodes, "_download_video_result", lambda *_args, **_kwargs: "ok")
+
+    result = nodes.FlowOmniFlashVideo().generate(
+        prompt="Slow deliberate camera move",
+        mode="ingredients / reference images",
+        aspect_ratio="landscape",
+        duration=8,
+        count=1,
+        resolution="720p",
+        seed=43,
+        video_model_override="",
+        timeout_seconds=1200,
+        reference_media_ids='["original-flow-contact-sheet"]',
+    )
+
+    assert result == "ok"
+    assert ReuseVideoClient.generation_args["ref_media_ids"] == [
+        "original-flow-contact-sheet"
+    ]
+
+
 def _png_bytes(value):
     buffer = io.BytesIO()
     Image.new("RGB", (4, 4), (value, value, value)).save(buffer, format="PNG")
