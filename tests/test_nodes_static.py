@@ -92,3 +92,12 @@ def test_video_preview_shows_dynamic_credit_estimate():
     assert '"720p": { 4: 7, 6: 10, 8: 12, 10: 15 }' in source
     assert "Costo estimado de Flow" in source
     assert "upscale 1080p sin costo" in source
+
+
+def test_character_status_displays_and_copies_failed_shot_error():
+    script_path = Path(__file__).resolve().parents[1] / "web" / "flow_character_status.js"
+    source = script_path.read_text(encoding="utf-8")
+
+    assert 'mediaId.textContent = failed ? "ERROR"' in source
+    assert "error.textContent = record.error" in source
+    assert '(record.error || `${record.shot_id || ""}\\tfailed`)' in source

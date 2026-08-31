@@ -141,7 +141,7 @@ For RunPod, run steps 2, 3, and 4 in order. Step 3 copies the RunPod terminal co
 
 For a local ComfyUI Desktop installation, run steps 1, 3.1, and 4.1. Step 3.1 reads Comfy Desktop's installation registry, selects the installed local instance, clones or safely updates this repository under `custom_nodes`, and installs requirements with that instance's own Python. Existing local modifications are saved in a recoverable Git stash before updating. Step 4.1 uses `http://127.0.0.1:8001`, does not start ngrok, and securely configures `FLOW_AGENT_BASE_URL` and `FLOW_AGENT_API_KEY` as Windows user variables. Fully close and reopen ComfyUI Desktop after the first local start so it inherits those variables.
 
-After initial local setup, the normal daily action is only `04.1-START-FLOW-LOCAL.cmd`. Run step 3.1 again when updating the custom node from GitHub.
+After initial local setup, the normal daily action is only `04.1-START-FLOW-LOCAL.cmd`. Run step 3.1 again when updating the custom node from GitHub. Step 3.1 updates the ComfyUI node only; rerun step 1 when an update includes Flow Agent backend compatibility patches. The step 4 launchers verify both required backend patches before starting, preventing a partially updated installation from reaching a paid generation request.
 
 Start Flow Agent through the desktop shortcut or:
 

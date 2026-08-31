@@ -101,10 +101,13 @@ No necesitas RunPod, ngrok ni copiar una URL para trabajar en Local.
 
 1. Cierra completamente ComfyUI Desktop.
 2. Ejecuta `03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd`.
-3. Cuando termine, ejecuta `04.1-START-FLOW-LOCAL.cmd`.
-4. Abre nuevamente ComfyUI Desktop.
+3. Si la actualización incluye correcciones del backend Flow Agent, ejecuta también `01-INSTALL-FLOW.cmd` para instalarlas.
+4. Cuando termine, ejecuta `04.1-START-FLOW-LOCAL.cmd`.
+5. Abre nuevamente ComfyUI Desktop.
 
 Si el nodo contiene modificaciones locales, el actualizador las guarda en un `git stash` recuperable antes de actualizar. No las elimina silenciosamente.
+
+El paso 3.1 actualiza el custom node de ComfyUI, pero no modifica por sí solo el backend guardado en `C:\Users\<usuario>\FlowAgent`. El lanzador comprueba los parches obligatorios antes de iniciar y te indicará cuándo debes repetir el paso 1.
 
 ## A4. Comprobar el estado local
 
@@ -293,6 +296,7 @@ Antes de generar, confirma siempre `count`, duración y resolución.
 | Los nodos `Flow / ...` no aparecen | El custom node no está instalado o ComfyUI no se reinició | Ejecuta el instalador 3.1 en Local o el comando 3 en RunPod y reinicia ComfyUI |
 | `Invalid image file` en Local | El workflow apunta a un archivo que solo existía en otra instalación | Carga nuevamente la imagen con `Load Image` en el ComfyUI actual |
 | `Requested entity was not found` | Un `media_id` pertenece a otro proyecto, cuenta o recurso eliminado | Vuelve a cargar la referencia en el proyecto y cuenta actuales; no reutilices IDs antiguos |
+| Solo se genera la primera toma y las demás indican `Media not found in history.json` | Falta el parche de reutilización de medios en el backend local | Ejecuta `06-STOP-FLOW.cmd`, después `01-INSTALL-FLOW.cmd` y finalmente el lanzador Local o RunPod |
 | La referencia no se parece al personaje | Se usó texto, un contact sheet o el modo equivocado | Usa imágenes individuales y selecciona `ingredients / reference images` |
 | Aparecen dos recursos al pedir 1080p | Uno es el 720p base y el otro su upscale | Es el proceso esperado; verifica que `count` esté en 1 |
 | Google Flow bloquea la generación | Política o seguridad de Google | Cambia la referencia o la solicitud; repetir la misma entrada normalmente produce el mismo bloqueo |

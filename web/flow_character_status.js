@@ -63,6 +63,7 @@ function createStatus(node) {
 }
 
 function addCopyRow(list, record) {
+    const failed = record.status === "failed";
     const row = document.createElement("button");
     row.type = "button";
     row.style.display = "grid";
@@ -72,20 +73,34 @@ function addCopyRow(list, record) {
     row.style.padding = "4px 6px";
     row.style.border = "0";
     row.style.borderRadius = "4px";
-    row.style.background = record.status === "failed" ? "#351b1b" : "#1d1d1d";
-    row.style.color = record.status === "failed" ? "#ff9d9d" : "#ddd";
+    row.style.background = failed ? "#351b1b" : "#1d1d1d";
+    row.style.color = failed ? "#ff9d9d" : "#ddd";
     row.style.textAlign = "left";
     row.style.cursor = "copy";
-    row.title = "Click to copy shot ID and media ID";
+    row.title = failed
+        ? (record.error || "Generation failed. Click to copy the error.")
+        : "Click to copy shot ID and media ID";
     const number = document.createElement("span");
     number.textContent = `#${String(record.shot_number ?? 1).padStart(2, "0")}`;
     const shotId = document.createElement("span");
     shotId.textContent = record.shot_id || "unknown";
     const mediaId = document.createElement("span");
-    mediaId.textContent = shortId(record.media_id);
+    mediaId.textContent = failed ? "ERROR" : shortId(record.media_id);
     row.append(number, shotId, mediaId);
+    if (failed && record.error) {
+        const error = document.createElement("span");
+        error.textContent = record.error;
+        error.style.gridColumn = "2 / 4";
+        error.style.fontSize = "10px";
+        error.style.lineHeight = "1.25";
+        error.style.whiteSpace = "normal";
+        error.style.opacity = "0.9";
+        row.append(error);
+    }
     row.addEventListener("click", async () => {
-        const value = `${record.shot_id || ""}\t${record.media_id || ""}`;
+        const value = failed
+            ? (record.error || `${record.shot_id || ""}\tfailed`)
+            : `${record.shot_id || ""}\t${record.media_id || ""}`;
         try {
             await navigator.clipboard.writeText(value);
             row.title = "Copied";

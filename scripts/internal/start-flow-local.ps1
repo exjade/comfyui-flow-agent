@@ -12,6 +12,7 @@ $DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
 $ConfigPath = Join-Path $DataRoot "flow-local.config.json"
 $StatePath = Join-Path $DataRoot "flow-local-state.json"
 $LegacyRoot = Split-Path -Parent $ScriptRoot
+$RepositoryRoot = Split-Path -Parent $LegacyRoot
 New-Item -ItemType Directory -Path $DataRoot -Force | Out-Null
 
 foreach ($LegacyName in @("flow-local.config.json", ".flow-local-state.json", "flow-agent.stdout.log", "flow-agent.stderr.log", "ngrok.log")) {
@@ -48,6 +49,21 @@ $StderrLog = Join-Path $DataRoot "flow-agent.stderr.log"
 $NgrokLog = Join-Path $DataRoot "ngrok.log"
 $EnvPath = Join-Path $FlowAgentDir ".env"
 if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { throw "File not found: $EnvPath" }
+
+$GitCommand = Get-Command git -ErrorAction SilentlyContinue
+if (-not $GitCommand) {
+    throw "Git was not found. Run scripts\01-INSTALL-FLOW.cmd again."
+}
+foreach ($PatchName in @("flow-agent-media-reuse.patch", "flow-agent-video-reference.patch")) {
+    $PatchPath = Join-Path $RepositoryRoot "patches\$PatchName"
+    if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {
+        throw "Required compatibility patch is missing: $PatchPath"
+    }
+    & $GitCommand.Source -C $FlowAgentDir apply --reverse --check --unidiff-zero $PatchPath 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Flow Agent compatibility fixes are not installed ($PatchName). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, before starting Local or RunPod mode."
+    }
+}
 
 function Get-DotEnvValue([string]$Name) {
     $Line = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match "^$([regex]::Escape($Name))=" } | Select-Object -Last 1

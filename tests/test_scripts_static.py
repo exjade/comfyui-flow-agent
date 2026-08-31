@@ -69,6 +69,13 @@ def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert "Apply-BackendPatches" in SETUP
 
 
+def test_start_refuses_to_run_without_required_backend_fixes():
+    assert "flow-agent-media-reuse.patch" in START
+    assert "flow-agent-video-reference.patch" in START
+    assert "apply --reverse --check --unidiff-zero" in START
+    assert "Flow Agent compatibility fixes are not installed" in START
+
+
 def test_conditioned_video_patch_tracks_current_omni_request_contract():
     assert 'MODELS["t2v"].get(duration' in VIDEO_PATCH
     assert '+            "textInput": {"prompt": prompt}' in VIDEO_PATCH
