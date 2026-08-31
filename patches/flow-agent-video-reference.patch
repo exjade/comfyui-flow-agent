@@ -549,30 +549,12 @@ index 3d81da5..64bdcaa 100644
  
      resp = {
 diff --git a/flow_server/routes/media.py b/flow_server/routes/media.py
-index 310071b..79d9751 100644
 --- a/flow_server/routes/media.py
 +++ b/flow_server/routes/media.py
-@@ -13,7 +13,7 @@ import logging
- from fastapi import APIRouter, HTTPException, Depends
- from fastapi.responses import FileResponse
- 
+@@ -16,1 +16,1 @@
 -from flow_engine import DEFAULT_PROJECT
 +from flow_engine import DEFAULT_PROJECT, ENDPOINTS
- 
- from flow_server.config import OUTPUT_DIR, public_url
- from flow_server.history import (
-@@ -25,6 +25,7 @@ from flow_server.history import (
-     write_history,
- )
- from flow_server.media_types import extension_for_mime, sniff_media_type
-+from flow_server.media_history import find_uploaded_file
- from flow_server.models import UploadRequest
- from flow_server.state import verify_api_key, get_active_bridge, publish, append_to_history
- 
-@@ -44,6 +45,18 @@ async def resolve_media_url(media_id: str):
-     return {"media_id": media_id, "url": url}
- 
- 
+@@ -47,0 +48,12 @@
 +@router.get("/v1/media/{media_id}/status", dependencies=[Depends(verify_api_key)])
 +async def resolve_media_status(media_id: str):
 +    """Return Flow's raw status for an existing media ID without creating a job."""
@@ -585,49 +567,6 @@ index 310071b..79d9751 100644
 +    )
 +
 +
- @router.post("/v1/upload", dependencies=[Depends(verify_api_key)])
- async def upload_file_endpoint(req: UploadRequest):
-     """Upload a file (image or video) to Google Flow and return its media ID and local URL."""
-@@ -80,6 +93,10 @@ async def upload_file_endpoint(req: UploadRequest):
-         with open(temp_path, "wb") as f:
-             f.write(media_bytes)
- 
-+        cached_image = None if is_video_input else find_uploaded_file(
-+            temp_path, project_id=project_id
-+        )
-+
-         if is_video_input:
-             from flow_engine.upload import upload_video
-             upload_res = await upload_video(temp_path, project_id, active_bridge)
-@@ -94,6 +111,28 @@ async def upload_file_endpoint(req: UploadRequest):
-             if not media_id:
-                 raise HTTPException(status_code=500, detail="Failed to upload image reference to Google Flow.")
- 
-+            # ``upload_image`` archives image bytes by SHA-256 and records the
-+            # reusable Flow ID.  Return that stable managed asset instead of
-+            # publishing another random upload_* file on every ComfyUI run.
-+            managed = find_uploaded_file(temp_path, project_id=project_id)
-+            if managed and str(managed.get("media_id")) == str(media_id):
-+                managed_name = derive_filename(managed)
-+                managed_url = (
-+                    public_url(managed_name)
-+                    if managed_name
-+                    else str(managed.get("url") or "")
-+                )
-+                if os.path.exists(temp_path):
-+                    os.remove(temp_path)
-+                return {
-+                    "media_id": str(media_id),
-+                    "url": managed_url,
-+                    "reused": bool(
-+                        cached_image
-+                        and str(cached_image.get("media_id")) == str(media_id)
-+                    ),
-+                }
-+
-         # Make the file web-accessible (R2 if configured, else local /download)
-         download_url, r2_key = await publish(temp_name, temp_path)
-         # If it went to R2, the local copy is no longer needed for serving
 diff --git a/flow_server/routes/system.py b/flow_server/routes/system.py
 index 14fd97e..6a76516 100644
 --- a/flow_server/routes/system.py

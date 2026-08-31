@@ -67,6 +67,8 @@ def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert "flow-agent-media-reuse.patch" in SETUP
     assert "flow-agent-video-reference.patch" in SETUP
     assert "Apply-BackendPatches" in SETUP
+    assert '-C $FlowRepoDir apply' in SETUP
+    assert '--directory=flow-agent' in SETUP
 
 
 def test_start_refuses_to_run_without_required_backend_fixes():
@@ -74,6 +76,8 @@ def test_start_refuses_to_run_without_required_backend_fixes():
     assert "flow-agent-video-reference.patch" in START
     assert "apply --reverse --check --unidiff-zero" in START
     assert "Flow Agent compatibility fixes are not installed" in START
+    assert '-C $FlowAgentRepositoryDir apply' in START
+    assert '"--directory=$FlowAgentRepositorySubdir"' in START
 
 
 def test_conditioned_video_patch_tracks_current_omni_request_contract():
@@ -81,6 +85,8 @@ def test_conditioned_video_patch_tracks_current_omni_request_contract():
     assert '+            "textInput": {"prompt": prompt}' in VIDEO_PATCH
     assert "veo_3_0_r2v_fast" not in VIDEO_PATCH
     assert "veo_3_1_i2v_s_fast" not in VIDEO_PATCH
+    assert "cached_image = None if is_video_input" not in VIDEO_PATCH
+    assert "from flow_server.media_history import find_uploaded_file" not in VIDEO_PATCH
 
 
 def test_video_patch_preserves_async_failures_and_exposes_read_only_diagnostics():

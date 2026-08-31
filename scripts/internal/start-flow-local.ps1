@@ -49,6 +49,11 @@ $StderrLog = Join-Path $DataRoot "flow-agent.stderr.log"
 $NgrokLog = Join-Path $DataRoot "ngrok.log"
 $EnvPath = Join-Path $FlowAgentDir ".env"
 if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { throw "File not found: $EnvPath" }
+$FlowAgentRepositoryDir = Split-Path -Parent $FlowAgentDir
+$FlowAgentRepositorySubdir = Split-Path -Leaf $FlowAgentDir
+if (-not (Test-Path -LiteralPath (Join-Path $FlowAgentRepositoryDir ".git") -PathType Container)) {
+    throw "Flow Agent Git repository was not found: $FlowAgentRepositoryDir"
+}
 
 $GitCommand = Get-Command git -ErrorAction SilentlyContinue
 if (-not $GitCommand) {
@@ -59,7 +64,7 @@ foreach ($PatchName in @("flow-agent-media-reuse.patch", "flow-agent-video-refer
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {
         throw "Required compatibility patch is missing: $PatchPath"
     }
-    & $GitCommand.Source -C $FlowAgentDir apply --reverse --check --unidiff-zero $PatchPath 2>$null
+    & $GitCommand.Source -C $FlowAgentRepositoryDir apply --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
     if ($LASTEXITCODE -ne 0) {
         throw "Flow Agent compatibility fixes are not installed ($PatchName). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, before starting Local or RunPod mode."
     }
