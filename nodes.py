@@ -72,13 +72,15 @@ def _validate_video_mode_connections(
 
     has_start = start_image is not None
     has_end = end_image is not None
-    has_references = (
+    has_image_references = (
         bool(reference_media_ids)
-        or bool(reference_video_media_ids)
-        or bool(reference_video_paths)
-        or any(video is not None for video in reference_videos)
         or reference_images is not None
         or any(image is not None for image in extra_reference_images)
+    )
+    has_video_references = (
+        bool(reference_video_media_ids)
+        or bool(reference_video_paths)
+        or any(video is not None for video in reference_videos)
     )
     has_source_video = (
         source_video is not None
@@ -96,13 +98,17 @@ def _validate_video_mode_connections(
             f"end_image is connected, but mode {mode!r} would ignore it. "
             "Select 'first + last frame' before generating."
         )
-    if has_references and mode not in {
+    if has_image_references and mode not in {
         "ingredients / reference images",
-        "edit source video",
         "video to video",
     }:
         raise FlowAgentError(
             f"Reference images are connected, but mode {mode!r} would ignore them. "
+            "Select 'ingredients / reference images' or 'video to video' before generating."
+        )
+    if has_video_references and mode != "ingredients / reference images":
+        raise FlowAgentError(
+            f"Reference videos are connected, but mode {mode!r} would ignore them. "
             "Select 'ingredients / reference images' before generating."
         )
     if has_source_video and mode not in {"edit source video", "video to video"}:
@@ -1101,7 +1107,7 @@ class FlowOmniFlashVideo:
             if not ids:
                 raise FlowAgentError("First + last frame mode requires end_image.")
             end_id = ids[0]
-        if mode in {"ingredients / reference images", "edit source video", "video to video"}:
+        if mode in {"ingredients / reference images", "video to video"}:
             uploaded_reference_ids = _upload_image_sources(
                 client,
                 [reference_images]
@@ -1110,25 +1116,26 @@ class FlowOmniFlashVideo:
                 timeout_seconds=timeout_seconds,
             )
             uploaded_video_reference_ids = []
-            for reference_path in video_reference_paths:
-                uploaded = client.upload_file(
-                    reference_path,
-                    timeout_seconds=_remaining(
-                        started, timeout_seconds, "uploading reference video"
-                    ),
-                )
-                uploaded_video_reference_ids.append(str(uploaded["media_id"]))
-            for connected_video in connected_reference_videos:
-                if connected_video is None:
-                    continue
-                with video_input_path(connected_video) as connected_video_path:
+            if mode == "ingredients / reference images":
+                for reference_path in video_reference_paths:
                     uploaded = client.upload_file(
-                        connected_video_path,
+                        reference_path,
                         timeout_seconds=_remaining(
-                            started, timeout_seconds, "uploading connected reference video"
+                            started, timeout_seconds, "uploading reference video"
                         ),
                     )
-                uploaded_video_reference_ids.append(str(uploaded["media_id"]))
+                    uploaded_video_reference_ids.append(str(uploaded["media_id"]))
+                for connected_video in connected_reference_videos:
+                    if connected_video is None:
+                        continue
+                    with video_input_path(connected_video) as connected_video_path:
+                        uploaded = client.upload_file(
+                            connected_video_path,
+                            timeout_seconds=_remaining(
+                                started, timeout_seconds, "uploading connected reference video"
+                            ),
+                        )
+                    uploaded_video_reference_ids.append(str(uploaded["media_id"]))
             reference_ids = list(
                 dict.fromkeys(
                     direct_reference_ids

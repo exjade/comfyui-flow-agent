@@ -181,6 +181,14 @@ def test_omni_video_mode_ui_exposes_only_relevant_inputs():
     assert '"source_video"' in source
     assert 'count fixed to 1' in source
 
+    edit_inputs = source.split('"edit source video": [', 1)[1].split("],", 1)[0]
+    video_to_video_inputs = source.split('"video to video": [', 1)[1].split("],", 1)[0]
+    assert '"source_video"' in edit_inputs
+    assert '"reference_images"' not in edit_inputs
+    assert '"reference_video"' not in edit_inputs
+    assert '"reference_images"' in video_to_video_inputs
+    assert '"reference_video"' not in video_to_video_inputs
+
 
 def test_upload_media_ui_switches_between_image_and_video():
     root = Path(__file__).resolve().parents[1]

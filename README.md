@@ -48,7 +48,7 @@ Character Creator is the batch generator. After it finishes, its images and `man
 
 ### Video generation and editing
 
-Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode accepts reference images, native ComfyUI `VIDEO` connections, video media IDs, or reachable video paths; edit/video-to-video uses exactly one native `source_video`, one Video Library media ID, or one reachable local path plus optional visual ingredients. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
+Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode accepts reference images, native ComfyUI `VIDEO` connections, video media IDs, or reachable video paths. `edit source video` accepts exactly one source and disables every reference input. `video to video` accepts exactly one source plus optional image references; additional video references remain exclusive to ingredients mode. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
 
 `Flow / Upload Media` has an `image`/`video` selector. It enables the matching native socket and disables the other one; connect that socket or provide one `media_path`, never both. Native `VIDEO` values are exported through a small independent adapter module, so the upload and Omni nodes do not duplicate ComfyUI video handling.
 
@@ -235,7 +235,8 @@ The uninstaller never removes or modifies Windows Python, external environments,
   - `start image to video` requires `start_image`.
   - `first + last frame` requires `start_image` and `end_image`.
   - `ingredients / reference images` accepts image references plus `reference_video_media_ids` and `reference_video_paths`, with 10 combined ingredients maximum.
-  - `edit source video` and `video to video` require exactly one source through `source_video_media_id` or `source_video_path`; visual ingredients are optional.
+  - `edit source video` requires exactly one source and disables references.
+  - `video to video` requires exactly one source and accepts optional image references; additional video references are disabled.
   - A source video is the clip being transformed. A reference video is an ingredient used for motion, lighting, style, subject, or scene guidance.
   - Leave `video_model_override` blank to select the correct Flow model for the chosen mode and orientation. Text-to-video and image-conditioned modes do not share the same model key.
   - A requested upscale returns one final delivery to ComfyUI. The native 720p source remains in Flow Agent history instead of appearing as a second generated video.

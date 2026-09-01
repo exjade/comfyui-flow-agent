@@ -54,8 +54,8 @@ Genera o edita videos. Primero selecciona el modo y luego conecta solamente las 
 | `start image to video` | Prompt + `start_image` |
 | `first + last frame` | Prompt + `start_image` + `end_image` |
 | `ingredients / reference images` | Prompt + una o más referencias de imagen o video |
-| `edit source video` | Prompt + un video fuente; referencias visuales opcionales |
-| `video to video` | Alias explícito de edición: un video fuente + instrucción; referencias visuales opcionales |
+| `edit source video` | Prompt + un video fuente; todas las referencias quedan deshabilitadas |
+| `video to video` | Un video fuente + instrucción + referencias de imagen opcionales |
 
 Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/landscape y selector de 720p/1080p. La edición/video-to-video admite un solo resultado. En 1080p primero genera 720p y luego ejecuta el upscale interno de Flow. Usa siempre seed `43`. Al cambiar `mode`, un módulo visual muestra sólo los controles pertinentes, atenúa sockets inactivos y explica los límites activos. Antes de enviar, el backend también rechaza entradas incompatibles para evitar una solicitud pagada equivocada. La estimación de precio se muestra en inglés (`Estimated Flow cost`).
 
@@ -380,7 +380,8 @@ La biblioteca muestra los videos registrados por Flow Agent, con filtro, prompt,
 - `start image to video`: conecta una sola imagen a `start_image`.
 - `first + last frame`: conecta `start_image` y `end_image`.
 - `ingredients / reference images`: conecta imágenes individuales y/o videos por los sockets nativos `reference_video`, mediante `reference_video_media_ids` o con `reference_video_paths`.
-- `edit source video` / `video to video`: proporciona una sola fuente mediante `source_video`, `source_video_media_id` o un archivo accesible en `source_video_path`; añade ingredientes visuales sólo si la edición los necesita.
+- `edit source video`: proporciona una sola fuente mediante `source_video`, `source_video_media_id` o `source_video_path`; las referencias adicionales quedan deshabilitadas.
+- `video to video`: proporciona una sola fuente y, opcionalmente, referencias de imagen. Las referencias de video adicionales quedan deshabilitadas en este modo.
 
 Para conservar mejor la identidad, utiliza las imágenes individuales del personaje. Un contact sheet es una sola imagen compuesta y no equivale a seis referencias independientes.
 
