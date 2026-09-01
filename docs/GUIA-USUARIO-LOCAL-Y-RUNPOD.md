@@ -1,4 +1,4 @@
-# Guía de usuario: ComfyUI local y RunPod
+# Guía de usuario — ComfyUI Flow Agent versión 1
 
 Esta guía explica cómo usar los nodos **ComfyUI Flow Agent** en dos escenarios:
 
@@ -6,6 +6,85 @@ Esta guía explica cómo usar los nodos **ComfyUI Flow Agent** en dos escenarios
 - **RunPod:** ComfyUI funciona en un Pod remoto y Flow Agent permanece en la computadora Windows donde están Chrome y la sesión de Google Flow.
 
 No mezcles los lanzadores de ambos modos. Elige uno según dónde esté funcionando ComfyUI.
+
+## Los siete nodos de la versión 1
+
+### `Flow / Upload Media`
+
+Sirve para cargar un medio y obtener su `media_id` reutilizable. Conecta una imagen en `image` o escribe una ruta válida en `media_path`. Sus salidas `media_id` y `source_url` pueden alimentar otros nodos sin copiar UUID manualmente. El contenido idéntico puede reutilizar una carga anterior.
+
+### `Flow / Nano Banana`
+
+Genera o edita imágenes. Escribe la instrucción en `prompt`, elige modelo, proporción y cantidad, y conecta hasta diez imágenes en `reference_image` a `reference_image_10`. Para editar una imagen concreta, conéctala a `reference_image` y describe únicamente el cambio deseado. El nodo usa siempre `seed = 43` y `control después de generar = fixed`; un workflow antiguo no puede sustituir ese valor.
+
+Salidas principales:
+
+- `images`: resultados listos para preview o para otro nodo.
+- `media_ids_json`: IDs de los resultados en Google Flow.
+- `source_urls_json`: direcciones originales devueltas por Flow Agent.
+
+Cada ejecución genera imágenes nuevas y consume los créditos correspondientes al `count`. La imagen conectada como referencia no se devuelve como si fuera una generación nueva.
+
+### `Flow / Custom Character Creator`
+
+Crea un dataset completo de personaje. `reference_image` define la identidad; las entradas opcionales de top, bottom, accesorios y zapatos indican la ropa que se debe conservar. Selecciona un preset, el número de tomas y la proporción. El nodo usa seed `43`, guarda cada resultado inmediatamente y produce imágenes individuales, contact sheet y `manifest.json`.
+
+Este nodo sí genera: una solicitud por toma. No lo vuelvas a poner en cola para seleccionar una imagen ya creada. Cuando termine, puede quedar en bypass o fuera del workflow de selección.
+
+### `Flow / 1. Choose Character Shot`
+
+Es una biblioteca y selector, no un generador. Pulsa **Refresh datasets**, elige un dataset guardado y luego una toma. Muestra exactamente la imagen original almacenada y entrega `image`, `shot_spec_json`, `shot_id`, `media_id` y `full_prompt`. No contacta Google Flow, no consume créditos y no vuelve a ejecutar Character Creator.
+
+Usos:
+
+- Conecta `image` con `Nano Banana.reference_image` para editar visualmente esa imagen con un prompt nuevo.
+- Conecta `shot_spec_json` con `2. Regenerate Chosen Shot` para crear una variante del mismo tipo de toma.
+
+### `Flow / 2. Regenerate Chosen Shot`
+
+Recibe `shot_spec_json` del selector y genera una sola alternativa usando el prompt, la identidad y las referencias guardadas. No edita píxeles de la imagen anterior y no reemplaza su `media_id`: crea una imagen nueva con un ID nuevo. Mantén `reuse_manifest_references = true` para datasets recientes. Conecta manualmente la referencia original sólo si trabajas con un manifest antiguo que no guardó IDs reutilizables.
+
+### `Flow / Omni Flash Video`
+
+Genera o edita videos. Primero selecciona el modo y luego conecta solamente las entradas de ese modo:
+
+| Modo | Entradas |
+|---|---|
+| `text to video` | Prompt |
+| `start image to video` | Prompt + `start_image` |
+| `first + last frame` | Prompt + `start_image` + `end_image` |
+| `ingredients / reference images` | Prompt + una o más referencias |
+| `edit source video` | Prompt + `source_video_media_id` o `source_video_path`; referencias opcionales |
+
+Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/landscape y selector de 720p/1080p. En 1080p primero genera 720p y luego ejecuta el upscale interno de Flow. Usa siempre seed `43`. Antes de enviar, el nodo muestra un costo estimado y rechaza conexiones incompatibles para evitar una solicitud pagada equivocada.
+
+### `Flow / Video Library`
+
+Pulsa **Refresh videos**, filtra el historial y selecciona un video mediante su preview. La biblioteca devuelve el archivo y su `media_id` sin pedir al usuario que trabaje con JSON. Conecta `media_id` a `Omni Flash Video.source_video_media_id` y selecciona `edit source video`. El prompt mostrado por la biblioteca es histórico y de sólo lectura; la nueva instrucción se escribe en Omni Flash.
+
+La biblioteca no genera, no edita y no consume créditos. Sólo incluye videos registrados por Flow Agent; un video creado únicamente en la web de Google Flow puede no aparecer.
+
+## Flujos recomendados
+
+```text
+Editar una imagen guardada
+1. Choose Character Shot.image → Nano Banana.reference_image
+                                    + prompt con el cambio
+```
+
+```text
+Crear otra versión de una toma
+1. Choose Character Shot.shot_spec_json → 2. Regenerate Chosen Shot
+```
+
+```text
+Editar un video guardado
+Video Library.media_id → Omni Flash Video.source_video_media_id
+                         mode: edit source video
+                         prompt: nueva instrucción
+```
+
+Las bibliotecas y selectores sólo leen. Nano Banana, Character Creator, Regenerate Chosen Shot y Omni Flash son los nodos que generan y pueden consumir créditos.
 
 ## 1. ¿Qué modo debo elegir?
 
@@ -286,7 +365,7 @@ Para conservar mejor la identidad, utiliza las imágenes individuales del person
 ## Resolución, cantidad y créditos
 
 - `count` permite de 1 a 4 videos.
-- La generación base admite 360p y 720p.
+- La versión 1 muestra únicamente 720p y 1080p; 360p permanece oculto porque su contrato interno no está verificado.
 - Al seleccionar 1080p, Flow genera primero 720p y después hace el upscale.
 - El nodo muestra una estimación de créditos antes de enviar la solicitud.
 - El upscale puede crear un segundo recurso dentro del historial de Google Flow, aunque ComfyUI entregue solamente el resultado final solicitado.

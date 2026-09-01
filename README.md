@@ -1,4 +1,4 @@
-# ComfyUI Flow Agent
+# ComfyUI Flow Agent — Version 1
 
 ComfyUI nodes for using Google Flow from either ComfyUI on the same Windows PC or a remote RunPod through a local Flow Agent instance.
 
@@ -20,9 +20,35 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 
 ## Confirmed capabilities
 
-Images support `harbor_seal`, `narwhal`, and `gem_pix_2`; 1:1, 16:9, 9:16, 4:3, and 3:4; `count` 1-20; up to 10 references through `ref_media_ids`; and seeds from 0 to 4294967295. `gem_pix_2` may create extra internal candidates, but this client strictly limits ComfyUI output to the requested `count`.
+Images support `harbor_seal`, `narwhal`, and `gem_pix_2`; 1:1, 16:9, 9:16, 4:3, and 3:4; `count` 1-20; and up to 10 references through `ref_media_ids`. Nano Banana and Character Creator use the stable seed `43`. `gem_pix_2` may create extra internal candidates, but this client strictly limits ComfyUI output to the requested `count`.
 
 Video supports text-to-video, start image, first/last frames, up to 10 ingredient images, and editing with one source video plus optional references. Durations are 4, 6, 8, or 10 seconds in landscape or portrait, with 1-4 outputs per request. Base generation currently uses 720p; selecting 1080p generates at 720p and then runs Flow's free upsample. Google Flow's newer 360p option is temporarily hidden because its internal generation schema has not yet been captured; sending the upsampler-only `resolution` field to a generation endpoint is rejected. The current upstream schema accepts only one source video.
+
+## Version 1 end-user workflow
+
+The seven registered nodes have separate responsibilities. Library and selector nodes are read-only: they do not spend credits or regenerate their upstream source.
+
+| Node | What the user does | What contacts Google Flow |
+|---|---|---|
+| `Flow / Upload Media` | Upload one image or a local media path and obtain a reusable `media_id` | One upload when the content is not already cached |
+| `Flow / Nano Banana` | Write an image prompt and optionally connect up to ten reference images | One image-generation request using seed `43` and the requested `count` |
+| `Flow / Custom Character Creator` | Provide one identity, optional wardrobe references, and choose a shot preset | One image-generation request per requested character shot |
+| `Flow / 1. Choose Character Shot` | Browse already saved character datasets and select the exact original image | Nothing; it reads local manifests and previews only |
+| `Flow / 2. Regenerate Chosen Shot` | Create one new alternative from the selected shot's saved prompt and references | Exactly one new image generation, plus retries only after failure |
+| `Flow / Omni Flash Video` | Generate or edit video using the mode selected in the node | One video job per request; 1080p adds Flow's internal upscale pass |
+| `Flow / Video Library` | Browse videos already tracked by Flow Agent and output the selected `media_id` | Nothing; it reads the local video history only |
+
+### Image editing
+
+To edit an existing image, connect the chosen IMAGE output to `Flow / Nano Banana.reference_image` and write the desired change in Nano Banana's prompt. Nano Banana performs the new edit/generation; the character selector itself never modifies an image. Seed is always `43` and control-after-generation is forced to `fixed`, including workflows saved with older values.
+
+### Character selection and regeneration
+
+Character Creator is the batch generator. After it finishes, its images and `manifest.json` remain in the local character library. `1. Choose Character Shot` selects one existing result without queuing Character Creator. `2. Regenerate Chosen Shot` then creates one alternative from the stored specification. The old image and its `media_id` remain unchanged.
+
+### Video generation and editing
+
+Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode uses reference images or existing IDs; edit-source-video uses a video selected in Video Library or a reachable local path. Omni Flash always sends seed `43`. The node rejects incompatible connected inputs before a paid request is sent.
 
 ## Verified HTTP endpoints
 
