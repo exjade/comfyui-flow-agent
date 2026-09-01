@@ -195,6 +195,8 @@ def test_omni_video_mode_ui_exposes_only_relevant_inputs():
     assert "addDOMWidget" not in preview.split("function createPreview", 1)[0]
     assert "addCustomWidget(widget)" in labels
     assert "return [width, 28]" in labels
+    assert "element.style.display" in source
+    assert "Math.min(size[1], 900)" in source
 
 
 def test_upload_media_ui_switches_between_image_and_video():

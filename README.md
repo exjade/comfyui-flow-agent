@@ -52,6 +52,8 @@ Choose the mode before connecting inputs: text-to-video needs only a prompt; sta
 
 `Flow / Upload Media` has an `image`/`video` selector. It enables the matching native socket and disables the other one; connect that socket or provide one `media_path`, never both. Native `VIDEO` values are exported through a small independent adapter module, so the upload and Omni nodes do not duplicate ComfyUI video handling.
 
+Google Flow rejects source-video speech editing with `SPEECH_EDIT_BLOCKED`. For native `VIDEO` connections and `source_video_path`, the adapter therefore creates a temporary video-only copy with FFmpeg, uploads that silent copy, and removes it afterward; the user's original file is never modified. An already uploaded `source_video_media_id` cannot be sanitized locally, so connect the corresponding Video Library `video` output or load the original file when speech is present.
+
 ## Verified HTTP endpoints
 
 - `GET /health`

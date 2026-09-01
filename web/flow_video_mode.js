@@ -64,6 +64,15 @@ function setWidgetVisible(widget, visible) {
     widget.computeSize = visible
         ? widget.flowOriginalComputeSize
         : () => [0, -4];
+    widget.hidden = !visible;
+    for (const element of [widget.element, widget.inputEl]) {
+        if (!element?.style) continue;
+        if (element.flowOriginalDisplay === undefined) {
+            element.flowOriginalDisplay = element.style.display || "";
+        }
+        element.style.display = visible ? element.flowOriginalDisplay : "none";
+        element.hidden = !visible;
+    }
 }
 
 function setSocketVisible(input, visible) {
@@ -107,7 +116,7 @@ function applyVideoMode(node) {
         node.flowVideoModeHelp.value = labels[mode] || "Select a video mode";
     }
     const size = node.computeSize?.();
-    if (size) node.setSize([Math.max(node.size[0], 430), size[1]]);
+    if (size) node.setSize([Math.max(node.size[0], 430), Math.min(size[1], 900)]);
     node.setDirtyCanvas?.(true, true);
 }
 

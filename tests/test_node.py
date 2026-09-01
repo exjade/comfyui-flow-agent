@@ -4,6 +4,7 @@ import json
 import io
 import sys
 import types
+from contextlib import nullcontext
 
 import pytest
 from PIL import Image
@@ -382,6 +383,7 @@ def test_video_to_video_accepts_native_comfy_video(monkeypatch, tmp_path):
             return {"status": "succeeded", "data": []}
 
     monkeypatch.setattr(nodes, "FlowAgentClient", NativeVideoClient)
+    monkeypatch.setattr(nodes, "video_without_audio", lambda path: nullcontext(path))
     monkeypatch.setattr(nodes, "_download_video_result", lambda *_args, **_kwargs: "ok")
 
     result = nodes.FlowOmniFlashVideo().generate(

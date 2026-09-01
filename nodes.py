@@ -22,7 +22,7 @@ from .image_utils import (
     stack_image_tensors,
     tensor_batch_to_png_data_uris,
 )
-from .video_utils import video_input_path
+from .video_utils import video_input_path, video_without_audio
 
 MODEL_IDS = ("gem_pix_2", "narwhal", "harbor_seal")
 ASPECT_TO_SIZE = {
@@ -1161,18 +1161,20 @@ class FlowOmniFlashVideo:
                 )
             if source_video is not None:
                 with video_input_path(source_video) as connected_source_path:
-                    uploaded = client.upload_file(
-                        connected_source_path,
-                        timeout_seconds=_remaining(
-                            started, timeout_seconds, "uploading connected source video"
-                        ),
-                    )
+                    with video_without_audio(connected_source_path) as silent_source_path:
+                        uploaded = client.upload_file(
+                            silent_source_path,
+                            timeout_seconds=_remaining(
+                                started, timeout_seconds, "uploading connected source video"
+                            ),
+                        )
                 source_id = str(uploaded["media_id"])
             if source_path:
-                uploaded = client.upload_file(
-                    source_path,
-                    timeout_seconds=_remaining(started, timeout_seconds, "uploading source video"),
-                )
+                with video_without_audio(source_path) as silent_source_path:
+                    uploaded = client.upload_file(
+                        silent_source_path,
+                        timeout_seconds=_remaining(started, timeout_seconds, "uploading source video"),
+                    )
                 source_id = uploaded["media_id"]
             if not source_id:
                 raise FlowAgentError(

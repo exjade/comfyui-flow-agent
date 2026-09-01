@@ -66,6 +66,7 @@ Referencias de video:
 - `reference_video_paths`: archivos accesibles desde la máquina donde se ejecuta ComfyUI, uno por línea; el nodo los carga antes de generar.
 - El máximo es 10 ingredientes combinados entre imágenes y videos.
 - Para editar, conecta exactamente una fuente: `source_video` (VIDEO nativo), `source_video_media_id` o `source_video_path`. No combines las tres. El video fuente no es lo mismo que un video ingrediente.
+- Google Flow bloquea la edición de voz con `SPEECH_EDIT_BLOCKED`. Al usar `source_video` o `source_video_path`, el nodo crea automáticamente una copia temporal sin audio, la sube y la elimina al terminar; nunca modifica el archivo original. Un `source_video_media_id` ya cargado no puede limpiarse localmente: si contiene voz, conecta la salida `video` de la biblioteca o vuelve a cargar el archivo original.
 
 ### `Flow / Video Library`
 
