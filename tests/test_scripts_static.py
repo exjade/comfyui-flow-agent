@@ -12,6 +12,9 @@ LOCAL_LAUNCHER = (ROOT / "scripts" / "04.1-START-FLOW-LOCAL.cmd").read_text(enco
 LOCAL_INSTALLER_LAUNCHER = (ROOT / "scripts" / "03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd").read_text(encoding="utf-8")
 LOCAL_INSTALLER = (ROOT / "scripts" / "internal" / "install-comfyui-local.ps1").read_text(encoding="utf-8")
 VIDEO_PATCH = (ROOT / "patches" / "flow-agent-video-reference.patch").read_text(encoding="utf-8")
+RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(
+    encoding="utf-8"
+)
 
 
 def test_start_recovers_managed_backend_and_bridge_listeners():
@@ -106,3 +109,16 @@ def test_video_patch_preserves_async_failures_and_exposes_read_only_diagnostics(
     assert "VideoGenerationFailedError" in VIDEO_PATCH
     assert "/v1/media/{media_id}/status" in VIDEO_PATCH
     assert "/v1/flow-app-config" in VIDEO_PATCH
+
+
+def test_runpod_installer_discovers_comfyui_and_its_python_without_fixed_path():
+    assert 'COMFY_DIR="${1:-${COMFYUI_PATH:-}}"' in RUNPOD_INSTALLER
+    assert "find /workspace -maxdepth 6 -type f -name main.py -print0" in RUNPOD_INSTALLER
+    assert '[[ -f "$candidate/main.py"' in RUNPOD_INSTALLER
+    assert '-f "$candidate/execution.py"' in RUNPOD_INSTALLER
+    assert '-f "$candidate/folder_paths.py"' in RUNPOD_INSTALLER
+    assert '"$COMFY_DIR"/.venv*/bin/python' in RUNPOD_INSTALLER
+    assert "command -v python3" in RUNPOD_INSTALLER
+    assert 'printf \'  %s\\n\\n\' "$NODE_DIR"' in RUNPOD_INSTALLER
+    assert "FLOW_AGENT_API_KEY contains an unresolved secret reference" in RUNPOD_INSTALLER
+    assert '${#FLOW_AGENT_API_KEY} characters' in RUNPOD_INSTALLER
