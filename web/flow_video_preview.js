@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
+import { addFlowLabel } from "./flow_ui_label.js";
 
 const FLOW_VIDEO_NODES = new Set([
     "FlowOmniFlashVideo",
@@ -24,12 +25,12 @@ function updateCreditEstimate(node) {
     const count = Math.max(1, Math.min(4, Number(widgetValue(node, "count", 1)) || 1));
     const costEach = VIDEO_CREDITS[baseResolution]?.[duration];
     if (costEach == null) {
-        estimate.textContent = "Estimated Flow cost: unavailable";
+        estimate.value = "Estimated Flow cost: unavailable";
         return;
     }
     const total = costEach * count;
     const upscaleNote = resolution === "1080p" ? " + free 1080p upscale" : "";
-    estimate.textContent = `Estimated Flow cost: ${total} credits (${costEach} × ${count})${upscaleNote}`;
+    estimate.value = `Estimated Flow cost: ${total} credits (${costEach} × ${count})${upscaleNote}`;
 }
 
 function createCreditEstimate(node) {
@@ -38,28 +39,10 @@ function createCreditEstimate(node) {
         return;
     }
 
-    const label = document.createElement("div");
-    label.style.boxSizing = "border-box";
-    label.style.width = "100%";
-    label.style.padding = "7px 10px";
-    label.style.borderRadius = "6px";
-    label.style.background = "#171717";
-    label.style.color = "#f0d77a";
-    label.style.fontSize = "12px";
-    label.style.fontWeight = "600";
-
-    const estimateWidget = node.addDOMWidget(
-        "flow_agent_credit_estimate",
-        "credits",
-        label,
-        {
-            hideOnZoom: false,
-            getMinHeight: () => 32,
-            getMaxHeight: () => 32,
-        },
-    );
-    estimateWidget.serialize = false;
-    node.flowAgentCreditEstimate = label;
+    node.flowAgentCreditEstimate = addFlowLabel(node, "flow_agent_credit_estimate", {
+        color: "#f0d77a",
+        value: "Estimated Flow cost: unavailable",
+    });
 
     for (const name of ["resolution", "duration", "count"]) {
         const widget = node.widgets?.find((candidate) => candidate.name === name);

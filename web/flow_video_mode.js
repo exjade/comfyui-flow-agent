@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { addFlowLabel } from "./flow_ui_label.js";
 
 const MODE_INPUTS = {
     "text to video": [],
@@ -103,7 +104,7 @@ function applyVideoMode(node) {
             "edit source video": "Requires exactly 1 source video · references disabled · count fixed to 1",
             "video to video": "Requires 1 source video · optional image references · count fixed to 1",
         };
-        node.flowVideoModeHelp.textContent = labels[mode] || "Select a video mode";
+        node.flowVideoModeHelp.value = labels[mode] || "Select a video mode";
     }
     const size = node.computeSize?.();
     if (size) node.setSize([Math.max(node.size[0], 430), size[1]]);
@@ -112,21 +113,10 @@ function applyVideoMode(node) {
 
 function createModeHelp(node) {
     if (node.flowVideoModeHelp) return;
-    const label = document.createElement("div");
-    label.style.boxSizing = "border-box";
-    label.style.width = "100%";
-    label.style.padding = "6px 10px";
-    label.style.borderRadius = "6px";
-    label.style.background = "#171717";
-    label.style.color = "#9fc8ff";
-    label.style.fontSize = "12px";
-    const widget = node.addDOMWidget("flow_video_mode_help", "mode limits", label, {
-        hideOnZoom: false,
-        getMinHeight: () => 30,
-        getMaxHeight: () => 30,
+    node.flowVideoModeHelp = addFlowLabel(node, "flow_video_mode_help", {
+        color: "#9fc8ff",
+        value: "Select a video mode",
     });
-    widget.serialize = false;
-    node.flowVideoModeHelp = label;
 }
 
 function installModeBehavior(node) {

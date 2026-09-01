@@ -169,9 +169,12 @@ def test_video_preview_shows_dynamic_credit_estimate():
 
 
 def test_omni_video_mode_ui_exposes_only_relevant_inputs():
+    root = Path(__file__).resolve().parents[1]
     source = (
-        Path(__file__).resolve().parents[1] / "web" / "flow_video_mode.js"
+        root / "web" / "flow_video_mode.js"
     ).read_text(encoding="utf-8")
+    preview = (root / "web" / "flow_video_preview.js").read_text(encoding="utf-8")
+    labels = (root / "web" / "flow_ui_label.js").read_text(encoding="utf-8")
 
     assert '"text to video": []' in source
     assert '"first + last frame": ["start_image", "end_image"]' in source
@@ -188,6 +191,10 @@ def test_omni_video_mode_ui_exposes_only_relevant_inputs():
     assert '"reference_video"' not in edit_inputs
     assert '"reference_images"' in video_to_video_inputs
     assert '"reference_video"' not in video_to_video_inputs
+    assert "addDOMWidget" not in source
+    assert "addDOMWidget" not in preview.split("function createPreview", 1)[0]
+    assert "addCustomWidget(widget)" in labels
+    assert "return [width, 28]" in labels
 
 
 def test_upload_media_ui_switches_between_image_and_video():
