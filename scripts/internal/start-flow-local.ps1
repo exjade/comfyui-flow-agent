@@ -72,7 +72,26 @@ foreach ($PatchName in @(
     }
     $PatchCheckExitCode = 1
     $UploadModule = Join-Path $FlowAgentDir "flow_engine\upload.py"
-    if ($PatchName -eq "flow-agent-video-recovery-upload.patch" -and (Test-Path -LiteralPath $UploadModule)) {
+    $I2VModule = Join-Path $FlowAgentDir "flow_engine\generators\i2v.py"
+    $GenerationModule = Join-Path $FlowAgentDir "flow_server\routes\generation.py"
+    $ModelsModule = Join-Path $FlowAgentDir "flow_server\models.py"
+    if (
+        $PatchName -eq "flow-agent-video-reference.patch" -and
+        (Test-Path -LiteralPath $I2VModule) -and
+        (Test-Path -LiteralPath $GenerationModule) -and
+        (Test-Path -LiteralPath $ModelsModule)
+    ) {
+        $I2VSource = Get-Content -LiteralPath $I2VModule -Raw
+        $GenerationSource = Get-Content -LiteralPath $GenerationModule -Raw
+        $ModelsSource = Get-Content -LiteralPath $ModelsModule -Raw
+        if (
+            $I2VSource.Contains('_conditioned_video_model("i2v", aspect, duration)') -and
+            $I2VSource.Contains('_conditioned_video_model("reference", aspect, duration)') -and
+            $GenerationSource.Contains('VideoGenerationFailedError') -and
+            $GenerationSource.Contains("Unsupported video resolution; use '720p' or '1080p'.") -and
+            $ModelsSource.Contains('n: int = Field(1, ge=1, le=4')
+        ) { $PatchCheckExitCode = 0 }
+    } elseif ($PatchName -eq "flow-agent-video-recovery-upload.patch" -and (Test-Path -LiteralPath $UploadModule)) {
         $UploadSource = Get-Content -LiteralPath $UploadModule -Raw
         if (
             $UploadSource.Contains('"method": "upload_video"') -and

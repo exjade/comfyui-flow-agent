@@ -127,6 +127,17 @@ def test_start_refuses_to_run_without_required_backend_fixes():
     assert '$PatchName -eq "flow-agent-video-recovery-upload.patch"' in START
     assert 'payload.get("sessionUrl")' in START
     assert 'bridge.send_message_to(client_id, message)' in START
+    assert '$PatchName -eq "flow-agent-video-reference.patch"' in START
+    assert '_conditioned_video_model(\"i2v\", aspect, duration)' in START
+    assert '_conditioned_video_model(\"reference\", aspect, duration)' in START
+    assert 'VideoGenerationFailedError' in START
+
+
+def test_setup_semantically_detects_conditioned_video_patch():
+    assert '$PatchLeaf -eq "flow-agent-video-reference.patch"' in SETUP
+    assert '_conditioned_video_model(\"i2v\", aspect, duration)' in SETUP
+    assert '_conditioned_video_model(\"reference\", aspect, duration)' in SETUP
+    assert 'VideoGenerationFailedError' in SETUP
 
 
 def test_video_ingredient_patch_accepts_image_or_video_media():
