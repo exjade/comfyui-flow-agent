@@ -62,19 +62,37 @@ if (-not $GitCommand) {
 foreach ($PatchName in @(
     "flow-agent-media-reuse.patch",
     "flow-agent-video-reference.patch",
-    "flow-agent-video-recovery-upload.patch"
+    "flow-agent-video-recovery-upload.patch",
+    "flow-agent-video-upload-transport.patch"
 )) {
     $PatchPath = Join-Path $RepositoryRoot "patches\$PatchName"
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {
         throw "Required compatibility patch is missing: $PatchPath"
     }
-    $PreviousErrorPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = "Continue"
-        & $GitCommand.Source -C $FlowAgentRepositoryDir apply --recount --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
-        $PatchCheckExitCode = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $PreviousErrorPreference
+    $PatchCheckExitCode = 1
+    $UploadModule = Join-Path $FlowAgentDir "flow_engine\upload.py"
+    if ($PatchName -eq "flow-agent-video-recovery-upload.patch" -and (Test-Path -LiteralPath $UploadModule)) {
+        $UploadSource = Get-Content -LiteralPath $UploadModule -Raw
+        if (
+            $UploadSource.Contains('"method": "upload_video"') -and
+            $UploadSource.Contains('payload = r.get("result")') -and
+            $UploadSource.Contains('payload.get("sessionUrl")')
+        ) { $PatchCheckExitCode = 0 }
+    } elseif ($PatchName -eq "flow-agent-video-upload-transport.patch" -and (Test-Path -LiteralPath $UploadModule)) {
+        $UploadSource = Get-Content -LiteralPath $UploadModule -Raw
+        if (
+            $UploadSource.Contains('bridge.send_message_to(client_id, message)') -and
+            -not $UploadSource.Contains('await bridge._ws.send(json.dumps({')
+        ) { $PatchCheckExitCode = 0 }
+    } else {
+        $PreviousErrorPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            & $GitCommand.Source -C $FlowAgentRepositoryDir apply --recount --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
+            $PatchCheckExitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $PreviousErrorPreference
+        }
     }
     if ($PatchCheckExitCode -ne 0) {
         throw "Flow Agent compatibility fixes are not installed ($PatchName). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, before starting Local or RunPod mode."

@@ -17,6 +17,9 @@ VIDEO_PATCH = (ROOT / "patches" / "flow-agent-video-reference.patch").read_text(
 VIDEO_RECOVERY_PATCH = (
     ROOT / "patches" / "flow-agent-video-recovery-upload.patch"
 ).read_text(encoding="utf-8")
+VIDEO_TRANSPORT_PATCH = (
+    ROOT / "patches" / "flow-agent-video-upload-transport.patch"
+).read_text(encoding="utf-8")
 RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(
     encoding="utf-8"
 )
@@ -42,6 +45,9 @@ def test_local_custom_node_installer_detects_updates_and_uses_comfy_python():
     assert 'pull --ff-only' in LOCAL_INSTALLER
     assert '.venv\\Scripts\\python.exe' in LOCAL_INSTALLER
     assert '-m pip install -r' in LOCAL_INSTALLER
+    assert 'comfyui-local.config.json' in LOCAL_INSTALLER
+    assert 'Using saved ComfyUI installation' in LOCAL_INSTALLER
+    assert '[switch]$Reconfigure' in LOCAL_INSTALLER
 
 
 def test_local_mode_configures_comfyui_without_ngrok():
@@ -75,9 +81,20 @@ def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert "flow-agent-media-reuse.patch" in SETUP
     assert "flow-agent-video-reference.patch" in SETUP
     assert "flow-agent-video-recovery-upload.patch" in SETUP
+    assert "flow-agent-video-upload-transport.patch" in SETUP
     assert "Apply-BackendPatches" in SETUP
     assert '-C $FlowRepoDir apply' in SETUP
     assert '--directory=flow-agent' in SETUP
+    assert '$ErrorActionPreference = "Continue"' in SETUP
+    assert "$ExitCode = $LASTEXITCODE" in SETUP
+    assert '$PatchLeaf -eq "flow-agent-video-recovery-upload.patch"' in SETUP
+    assert 'payload.get("sessionUrl")' in SETUP
+    assert 'bridge.send_message_to(client_id, message)' in SETUP
+    assert "Test-NgrokAuthtokenConfigured" in SETUP
+    assert "Existing ngrok configuration preserved" in SETUP
+    assert "Existing browser extension setup preserved" in SETUP
+    assert "Existing Google Flow project preserved" in SETUP
+    assert '[switch]$Reconfigure' in SETUP
 
 
 def test_local_installer_enumerates_comfy_desktop_json_in_windows_powershell():
@@ -95,10 +112,16 @@ def test_start_refuses_to_run_without_required_backend_fixes():
     assert "flow-agent-media-reuse.patch" in START
     assert "flow-agent-video-reference.patch" in START
     assert "flow-agent-video-recovery-upload.patch" in START
+    assert "flow-agent-video-upload-transport.patch" in START
     assert "apply --recount --reverse --check --unidiff-zero" in START
     assert "Flow Agent compatibility fixes are not installed" in START
     assert '-C $FlowAgentRepositoryDir apply' in START
     assert '"--directory=$FlowAgentRepositorySubdir"' in START
+    assert '$ErrorActionPreference = "Continue"' in START
+    assert "$PatchCheckExitCode = $LASTEXITCODE" in START
+    assert '$PatchName -eq "flow-agent-video-recovery-upload.patch"' in START
+    assert 'payload.get("sessionUrl")' in START
+    assert 'bridge.send_message_to(client_id, message)' in START
 
 
 def test_conditioned_video_patch_tracks_current_omni_request_contract():
@@ -124,6 +147,13 @@ def test_video_recovery_patch_uses_dedicated_extension_upload_contract():
     assert '"videoSize": video_size' in VIDEO_RECOVERY_PATCH
     assert 'payload = r.get("result")' in VIDEO_RECOVERY_PATCH
     assert 'payload.get("sessionUrl")' in VIDEO_RECOVERY_PATCH
+
+
+def test_video_upload_transport_patch_supports_fastapi_and_raw_websockets():
+    assert "+    await bridge._ws.send" not in VIDEO_TRANSPORT_PATCH
+    assert "bridge._select_client()" in VIDEO_TRANSPORT_PATCH
+    assert "bridge.send_message_to(client_id" in VIDEO_TRANSPORT_PATCH
+    assert "bridge.http_registry.get_flow_key()" in VIDEO_TRANSPORT_PATCH
 
 
 def test_runpod_installer_discovers_comfyui_and_its_python_without_fixed_path():

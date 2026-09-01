@@ -1,6 +1,7 @@
 param(
     [string]$InstallRoot = "$env:USERPROFILE\FlowAgent",
-    [int]$Port = 8001
+    [int]$Port = 8001,
+    [switch]$Reconfigure
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,10 +12,12 @@ $RepositoryRoot = Split-Path -Parent $LauncherRoot
 $BackendPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-media-reuse.patch"
 $BackendVideoPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-reference.patch"
 $BackendVideoRecoveryPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-recovery-upload.patch"
+$BackendVideoTransportPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-upload-transport.patch"
 $BackendPatches = @(
     @{ Path = $BackendPatchPath; Name = "media reuse fix" },
     @{ Path = $BackendVideoPatchPath; Name = "conditioned-video fix" },
-    @{ Path = $BackendVideoRecoveryPatchPath; Name = "stale-video recovery upload fix" }
+    @{ Path = $BackendVideoRecoveryPatchPath; Name = "stale-video recovery upload fix" },
+    @{ Path = $BackendVideoTransportPatchPath; Name = "video upload bridge transport fix" }
 )
 $DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
 $ConfigPath = Join-Path $DataRoot "flow-local.config.json"
@@ -45,6 +48,23 @@ function Find-CommandPath([string]$Name) {
 
 function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) { return $false }
+    $PatchLeaf = Split-Path -Leaf $PatchPath
+    $UploadModule = Join-Path $FlowAgentDir "flow_engine\upload.py"
+    if ($PatchLeaf -eq "flow-agent-video-recovery-upload.patch" -and (Test-Path -LiteralPath $UploadModule)) {
+        $UploadSource = Get-Content -LiteralPath $UploadModule -Raw
+        return (
+            $UploadSource.Contains('"method": "upload_video"') -and
+            $UploadSource.Contains('payload = r.get("result")') -and
+            $UploadSource.Contains('payload.get("sessionUrl")')
+        )
+    }
+    if ($PatchLeaf -eq "flow-agent-video-upload-transport.patch" -and (Test-Path -LiteralPath $UploadModule)) {
+        $UploadSource = Get-Content -LiteralPath $UploadModule -Raw
+        return (
+            $UploadSource.Contains('bridge.send_message_to(client_id, message)') -and
+            -not $UploadSource.Contains('await bridge._ws.send(json.dumps({')
+        )
+    }
     # A non-zero reverse check is the normal signal that a new patch still
     # needs to be installed.  Do not let the script-wide Stop preference turn
     # Git's expected stderr into a terminating NativeCommandError.
@@ -174,6 +194,19 @@ function Find-ChromiumBrowser {
         Select-Object -First 1
 }
 
+function Test-NgrokAuthtokenConfigured {
+    $Candidates = @(
+        (Join-Path $env:LOCALAPPDATA "ngrok\ngrok.yml"),
+        (Join-Path $env:USERPROFILE ".config\ngrok\ngrok.yml")
+    ) | Select-Object -Unique
+    foreach ($Candidate in $Candidates) {
+        if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { continue }
+        $Content = Get-Content -LiteralPath $Candidate -Raw
+        if ($Content -match '(?m)^\s*authtoken\s*:\s*\S+') { return $true }
+    }
+    return $false
+}
+
 Write-Host "FLOW AGENT + NGROK INITIAL SETUP" -ForegroundColor Magenta
 Write-Host "Local installation: $InstallRoot"
 
@@ -236,41 +269,57 @@ try {
 }
 
 Write-Step "4/7 Configuring ngrok"
-Start-Process "https://dashboard.ngrok.com/get-started/your-authtoken"
-$SecureToken = Read-Host "Paste your ngrok authtoken (input is hidden)" -AsSecureString
-$NgrokToken = Convert-SecureStringToText $SecureToken
-if ([string]::IsNullOrWhiteSpace($NgrokToken)) { throw "The ngrok authtoken is empty." }
-& $NgrokExe config add-authtoken $NgrokToken
-$NgrokToken = $null
-if ($LASTEXITCODE -ne 0) { throw "ngrok rejected the authtoken." }
+$NgrokConfigured = Test-NgrokAuthtokenConfigured
+if ($NgrokConfigured -and -not $Reconfigure) {
+    Write-Host "Existing ngrok configuration preserved." -ForegroundColor Green
+} else {
+    Start-Process "https://dashboard.ngrok.com/get-started/your-authtoken"
+    $SecureToken = Read-Host "Paste your ngrok authtoken (input is hidden)" -AsSecureString
+    $NgrokToken = Convert-SecureStringToText $SecureToken
+    if ([string]::IsNullOrWhiteSpace($NgrokToken)) { throw "The ngrok authtoken is empty." }
+    & $NgrokExe config add-authtoken $NgrokToken
+    $NgrokToken = $null
+    if ($LASTEXITCODE -ne 0) { throw "ngrok rejected the authtoken." }
+}
 
 Write-Step "5/7 Installing the browser extension"
-$ExtensionDir | Set-Clipboard
-Start-Process explorer.exe -ArgumentList @("/select,`"$ExtensionDir\manifest.json`"")
-if ($BrowserExe) {
-    Start-Process -FilePath $BrowserExe -ArgumentList "chrome://extensions"
+$ExistingManagedInstall = Test-Path -LiteralPath $InstallMarkerPath -PathType Leaf
+if ($ExistingManagedInstall -and -not $Reconfigure) {
+    Write-Host "Existing browser extension setup preserved." -ForegroundColor Green
 } else {
-    Start-Process "https://support.google.com/chrome_webstore/answer/2664769"
+    $ExtensionDir | Set-Clipboard
+    Start-Process explorer.exe -ArgumentList @("/select,`"$ExtensionDir\manifest.json`"")
+    if ($BrowserExe) {
+        Start-Process -FilePath $BrowserExe -ArgumentList "chrome://extensions"
+    } else {
+        Start-Process "https://support.google.com/chrome_webstore/answer/2664769"
+    }
+    Write-Host "On the extensions page:" -ForegroundColor Yellow
+    Write-Host "  1. Enable Developer mode."
+    Write-Host "  2. Click Load unpacked."
+    Write-Host "  3. Select the folder copied to the clipboard: $ExtensionDir"
+    Read-Host "Press Enter after the Flow Agent extension is installed"
 }
-Write-Host "On the extensions page:" -ForegroundColor Yellow
-Write-Host "  1. Enable Developer mode."
-Write-Host "  2. Click Load unpacked."
-Write-Host "  3. Select the folder copied to the clipboard: $ExtensionDir"
-Read-Host "Press Enter after the Flow Agent extension is installed"
 
 Write-Step "6/7 Selecting a Google Flow project"
-$FlowHome = "https://labs.google/fx/es-419/tools/flow"
-if ($BrowserExe) {
-    Start-Process -FilePath $BrowserExe -ArgumentList $FlowHome
+$ExistingProjectId = Get-ProjectId (Get-DotEnvValue "DEFAULT_PROJECT")
+if ($ExistingProjectId -and -not $Reconfigure) {
+    $ProjectId = $ExistingProjectId
+    Write-Host "Existing Google Flow project preserved: $ProjectId" -ForegroundColor Green
 } else {
-    Start-Process $FlowHome
-}
-Write-Host "Sign in, create or open a project, and copy its full URL." -ForegroundColor Yellow
-$ProjectId = $null
-while (-not $ProjectId) {
-    $ProjectInput = Read-Host "Paste the Google Flow project URL"
-    $ProjectId = Get-ProjectId $ProjectInput
-    if (-not $ProjectId) { Write-Host "The project ID was not recognized. Try again." -ForegroundColor Red }
+    $FlowHome = "https://labs.google/fx/es-419/tools/flow"
+    if ($BrowserExe) {
+        Start-Process -FilePath $BrowserExe -ArgumentList $FlowHome
+    } else {
+        Start-Process $FlowHome
+    }
+    Write-Host "Sign in, create or open a project, and copy its full URL." -ForegroundColor Yellow
+    $ProjectId = $null
+    while (-not $ProjectId) {
+        $ProjectInput = Read-Host "Paste the Google Flow project URL"
+        $ProjectId = Get-ProjectId $ProjectInput
+        if (-not $ProjectId) { Write-Host "The project ID was not recognized. Try again." -ForegroundColor Red }
+    }
 }
 
 Write-Step "7/7 Creating secure configuration"

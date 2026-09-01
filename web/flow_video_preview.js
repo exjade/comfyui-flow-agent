@@ -3,7 +3,6 @@ import { api } from "../../scripts/api.js";
 
 const FLOW_VIDEO_NODES = new Set([
     "FlowOmniFlashVideo",
-    "FlowVideoUpsample",
 ]);
 
 const VIDEO_CREDITS = {

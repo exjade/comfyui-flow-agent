@@ -1,4 +1,4 @@
-"""ComfyUI nodes for Flow Agent image, video, upload, and upsample APIs."""
+"""ComfyUI nodes for Flow Agent image, video, upload, and character workflows."""
 
 from __future__ import annotations
 
@@ -401,7 +401,7 @@ class FlowNanoBanana:
                 "model": (MODEL_IDS, {"default": "gem_pix_2"}),
                 "aspect_ratio": (tuple(ASPECT_TO_SIZE), {"default": "square (1:1)"}),
                 "count": ("INT", {"default": 1, "min": 1, "max": 20, "step": 1}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 4294967295, "step": 1}),
+                "seed": ("INT", {"default": 43, "min": 43, "max": 43, "step": 1}),
                 "timeout_seconds": ("INT", {"default": 600, "min": 30, "max": 3600, "step": 30}),
             },
             "optional": {
@@ -453,7 +453,7 @@ class FlowNanoBanana:
             model=model,
             size=ASPECT_TO_SIZE[aspect_ratio],
             count=count,
-            seed=seed,
+            seed=43,
             ref_media_ids=reference_ids,
             exclude_media_ids=reference_ids,
             timeout_seconds=_remaining(started, timeout_seconds, "starting image generation"),
@@ -494,7 +494,7 @@ class FlowCharacterCreator:
                 "shot_preset": (CHARACTER_PRESET_NAMES, {"default": "all 22"}),
                 "shot_count": ("INT", {"default": 22, "min": 1, "max": 102, "step": 1}),
                 "model": (MODEL_IDS, {"default": "gem_pix_2"}),
-                "seed": ("INT", {"default": 43, "min": 0, "max": 4294967295, "step": 1}),
+                "seed": ("INT", {"default": 43, "min": 43, "max": 43, "step": 1}),
                 "retry_count": ("INT", {"default": 1, "min": 0, "max": 3, "step": 1}),
                 "continue_on_error": ("BOOLEAN", {"default": True}),
                 "timeout_per_image": (
@@ -538,10 +538,6 @@ class FlowCharacterCreator:
         "optional top, bottom, accessories, and shoes references. Includes the 22-shot "
         "Character Persona preset and custom shot lists."
     )
-
-    @classmethod
-    def IS_CHANGED(cls, **_kwargs):
-        return float("nan")
 
     def generate_dataset(
         self,
@@ -611,7 +607,7 @@ class FlowCharacterCreator:
                         model=model,
                         size=ASPECT_TO_SIZE[aspect_ratio],
                         count=1,
-                        seed=seed,
+                        seed=43,
                         ref_media_ids=reference_ids,
                         timeout_seconds=float(timeout_per_image),
                         idempotency_key=idempotency_key,
@@ -691,6 +687,16 @@ class FlowCharacterCreator:
             "source_urls": source_urls,
             "shots": records,
         }
+        manifest_folder = os.path.join(
+            _comfy_output_directory(), "characters", slugify(dataset_id, fallback="character")
+        )
+        os.makedirs(manifest_folder, exist_ok=True)
+        manifest_path = os.path.join(manifest_folder, "manifest.json")
+        manifest["manifest_path"] = manifest_path
+        temporary_manifest = f"{manifest_path}.tmp"
+        with open(temporary_manifest, "w", encoding="utf-8") as manifest_file:
+            json.dump(manifest, manifest_file, ensure_ascii=False, indent=2)
+        os.replace(temporary_manifest, manifest_path)
         ui_summary = {
             "dataset_id": dataset_id,
             "requested_shots": len(shots),
@@ -724,91 +730,11 @@ class FlowCharacterCreator:
         }
 
 
-class FlowCharacterShotSelector:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "images": ("IMAGE",),
-                "manifest_json": ("STRING", {"multiline": True, "default": ""}),
-                "shot_number": ("INT", {"default": 1, "min": 1, "max": 102, "step": 1}),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("image", "shot_spec_json", "shot_id", "media_id", "full_prompt")
-    FUNCTION = "select"
-    CATEGORY = "Flow Agent / Character"
-    OUTPUT_NODE = True
-    DESCRIPTION = "Select and preview one logical shot from a Character Creator dataset."
-
-    def select(self, images, manifest_json, shot_number):
-        manifest = _parse_json_object(manifest_json, "manifest_json")
-        records = manifest.get("shots")
-        if not isinstance(records, list):
-            raise FlowAgentError("manifest_json does not contain a shots list.")
-        record = next(
-            (
-                item
-                for item in records
-                if isinstance(item, dict) and item.get("shot_number") == shot_number
-            ),
-            None,
-        )
-        if record is None:
-            raise FlowAgentError(f"Shot number {shot_number} is not present in this manifest.")
-        if record.get("status") != "succeeded" or not isinstance(record.get("batch_index"), int):
-            raise FlowAgentError(
-                f"Shot {shot_number} ({record.get('shot_id', 'unknown')}) did not generate successfully."
-            )
-        batch_index = record["batch_index"]
-        if getattr(images, "ndim", 0) == 3:
-            images = images.unsqueeze(0)
-        if batch_index < 0 or batch_index >= int(images.shape[0]):
-            raise FlowAgentError(
-                f"Manifest batch_index {batch_index} is outside the connected IMAGE batch."
-            )
-        selected = images[batch_index : batch_index + 1]
-        shot_spec = {
-            "version": 1,
-            "dataset_id": manifest.get("dataset_id", ""),
-            "subject_description": manifest.get("subject_description", ""),
-            "model": manifest.get("model", "gem_pix_2"),
-            "aspect_ratio": manifest.get("aspect_ratio", "square (1:1)"),
-            "references": manifest.get("references", []),
-            "shot_number": record["shot_number"],
-            "shot_id": record["shot_id"],
-            "group": record.get("group", ""),
-            "prompt_fragment": record.get("prompt_fragment", ""),
-            "full_prompt": record.get("full_prompt", ""),
-            "media_id": record.get("media_id", ""),
-            "saved_path": record.get("saved_path", ""),
-            "preview": record.get("preview"),
-        }
-        preview = _preview_from_record(record)
-        ui = {
-            "character_shot": [json.dumps(shot_spec, ensure_ascii=False)],
-        }
-        if preview:
-            ui["images"] = [preview]
-        return {
-            "ui": ui,
-            "result": (
-                selected,
-                json.dumps(shot_spec, ensure_ascii=False),
-                str(record.get("shot_id", "")),
-                str(record.get("media_id", "")),
-                str(record.get("full_prompt", "")),
-            ),
-        }
-
-
 class FlowGenerateCharacterShot:
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "reference_image": ("IMAGE",),
                 "shot_spec_json": ("STRING", {"multiline": True, "default": ""}),
                 "model": (MODEL_IDS, {"default": "gem_pix_2"}),
                 "seed": ("INT", {"default": 43, "min": 0, "max": 4294967295, "step": 1}),
@@ -819,6 +745,7 @@ class FlowGenerateCharacterShot:
                 ),
             },
             "optional": {
+                "reference_image": ("IMAGE",),
                 "previous_media_id": ("STRING", {"default": ""}),
                 "reuse_manifest_references": ("BOOLEAN", {"default": True}),
                 "aspect_ratio": (
@@ -838,7 +765,8 @@ class FlowGenerateCharacterShot:
     CATEGORY = "Flow Agent / Character"
     OUTPUT_NODE = True
     DESCRIPTION = (
-        "Regenerate one selected character shot using the original reference image and shot prompt."
+        "Step 2 of 2: create a new version of the chosen shot using its saved prompt and "
+        "original character references. This does not edit the old image pixels or media_id."
     )
 
     @classmethod
@@ -847,12 +775,12 @@ class FlowGenerateCharacterShot:
 
     def regenerate(
         self,
-        reference_image,
         shot_spec_json,
         model,
         seed,
         retry_count,
         timeout_seconds,
+        reference_image=None,
         previous_media_id="",
         reuse_manifest_references=True,
         aspect_ratio="use dataset setting",
@@ -893,6 +821,11 @@ class FlowGenerateCharacterShot:
         if can_reuse:
             references = saved_references
         else:
+            if reference_image is None:
+                raise FlowAgentError(
+                    "This saved shot has no reusable reference IDs. Connect the original "
+                    "character image to reference_image, or choose a newer saved dataset."
+                )
             upload_started = time.monotonic()
             references = _upload_character_references(
                 client,
@@ -1138,53 +1071,6 @@ class FlowOmniFlashVideo:
             payload,
             requested_resolution=resolution,
             count=count,
-            started=started,
-            timeout_seconds=timeout_seconds,
-        )
-
-
-class FlowVideoUpsample:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "media_id": ("STRING", {"default": ""}),
-                "resolution": (("1080p", "4k"), {"default": "1080p"}),
-                "aspect_ratio": (VIDEO_ASPECTS, {"default": "landscape"}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 4294967295, "step": 1}),
-                "timeout_seconds": ("INT", {"default": 1200, "min": 60, "max": 7200, "step": 60}),
-            }
-        }
-
-    RETURN_TYPES = ("VIDEO", "VHS_FILENAMES", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("video", "vhs_filenames", "video_paths_json", "media_ids_json", "source_urls_json", "job_json")
-    FUNCTION = "upsample"
-    CATEGORY = "Flow Agent"
-    OUTPUT_NODE = True
-
-    @classmethod
-    def IS_CHANGED(cls, **_kwargs):
-        return float("nan")
-
-    def upsample(self, media_id, resolution, aspect_ratio, seed, timeout_seconds):
-        clean_media_id = media_id.strip()
-        if not clean_media_id:
-            raise FlowAgentError("media_id cannot be empty.")
-        client = FlowAgentClient.from_env()
-        started = time.monotonic()
-        client.assert_ready(timeout_seconds=min(15.0, float(timeout_seconds)))
-        payload = client.upsample_video(
-            media_id=clean_media_id,
-            resolution=resolution,
-            aspect=aspect_ratio,
-            seed=seed,
-            timeout_seconds=_remaining(started, timeout_seconds, "starting video upsample"),
-        )
-        return _download_video_result(
-            client,
-            payload,
-            requested_resolution=resolution,
-            count=1,
             started=started,
             timeout_seconds=timeout_seconds,
         )

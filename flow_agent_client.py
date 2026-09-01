@@ -395,33 +395,6 @@ class FlowAgentClient:
         remaining = timeout_seconds - (time.monotonic() - started)
         return self._wait_for_video_job(payload, remaining)
 
-    def upsample_video(
-        self,
-        *,
-        media_id: str,
-        resolution: str,
-        aspect: str,
-        seed: int,
-        timeout_seconds: float,
-        idempotency_key: str | None = None,
-    ) -> dict[str, Any]:
-        key = idempotency_key or f"comfyui-upsample-{uuid.uuid4()}"
-        started = time.monotonic()
-        payload = self._post_generation_with_replay(
-            path="/v1/videos/upsample",
-            operation="video upsample",
-            body={
-                "media_id": media_id,
-                "resolution": resolution,
-                "aspect": aspect,
-                "seed": seed,
-            },
-            idempotency_key=key,
-            timeout_seconds=timeout_seconds,
-        )
-        remaining = timeout_seconds - (time.monotonic() - started)
-        return self._wait_for_video_job(payload, remaining)
-
     def _wait_for_video_job(
         self, payload: dict[str, Any], timeout_seconds: float
     ) -> dict[str, Any]:

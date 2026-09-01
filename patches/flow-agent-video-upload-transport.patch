@@ -1,0 +1,38 @@
+diff --git a/flow_engine/upload.py b/flow_engine/upload.py
+--- a/flow_engine/upload.py
++++ b/flow_engine/upload.py
+@@ -80,10 +80,17 @@ async def upload_video(
+-    token = bridge._flow_key
++    # Route through ExtensionBridge instead of calling ``_ws.send`` directly.
++    # FastAPI/Starlette WebSockets expect an ASGI mapping in ``send`` whereas
++    # raw websockets accept text; send_message_to normalises both transports.
++    client_id = bridge._select_client()
++    if not client_id:
++        raise ConnectionError("No Flow extension client is connected")
++    token = (
++        bridge._tokens.get(client_id)
++        or bridge.http_registry.get_flow_key()
++        or bridge._flow_key
++    )
+     rid = str(uuid.uuid4())[:8]
+     fut = asyncio.get_event_loop().create_future()
+     bridge._pending[rid] = fut
+ 
+-    await bridge._ws.send(json.dumps({
++    message = {
+         "id": rid,
+         "method": "upload_video",
+         "params": {
+@@ -91,5 +98,11 @@ async def upload_video(
+             "videoSize": video_size,
+         },
+-    }))
++    }
++    sent = await bridge.send_message_to(client_id, message)
++    if not sent:
++        bridge._pending.pop(rid, None)
++        if own_bridge:
++            await bridge.close()
++        raise ConnectionError("Could not send video upload request to the Flow extension")
+ 
+     try:

@@ -2,7 +2,6 @@ import { app } from "../../scripts/app.js";
 
 const CHARACTER_NODES = new Set([
     "FlowCharacterCreator",
-    "FlowCharacterShotSelector",
     "FlowGenerateCharacterShot",
 ]);
 

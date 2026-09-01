@@ -12,11 +12,10 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 |---|---|
 | `Flow / Nano Banana` | Generate images from text, ingredients, or references |
 | `Flow / Custom Character Creator` | Generate a labeled character dataset with inline previews |
-| `Flow / Select Character Shot` | Select and preview one generated dataset shot |
-| `Flow / Generate Character Shot` | Regenerate one selected shot without rebuilding the dataset |
+| `Flow / 1. Choose Character Shot` | Browse saved Character Creator datasets and select an existing image |
+| `Flow / 2. Regenerate Chosen Shot` | Step 2: create a new version using that shot's saved prompt and references |
 | `Flow / Omni Flash Video` | Generate or edit video from text, frames, or ingredients |
 | `Flow / Upload Media` | Upload an image or video and return a reusable `media_id` |
-| `Flow / Upscale Video` | Upscale an existing video to 1080p or 4K |
 | `Flow / Video Library` | Visually browse tracked videos and reuse their `media_id` |
 
 ## Confirmed capabilities
@@ -95,7 +94,7 @@ for node in (
     "FlowGenerateCharacterShot",
     "FlowOmniFlashVideo",
     "FlowUploadMedia",
-    "FlowVideoUpsample",
+    "FlowVideoLibrary",
 ):
     response = requests.get(f"http://127.0.0.1:8188/object_info/{node}", timeout=15)
     print(node, response.status_code, list(response.json()))
@@ -104,11 +103,11 @@ PY
 
 Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline preview, native `VIDEO`, Video Helper Suite-compatible `VHS_FILENAMES`, paths, media IDs, source URLs, and job JSON. `source_video_path` must point to a RunPod file, not a Windows path.
 
-`Flow / Video Library` provides an end-user browser for videos tracked by Flow Agent. Click **Refresh videos**, filter generated/uploaded/upscaled items, preview one video, and select it. Connect its plain `media_id` output directly to `Flow / Upscale Video.media_id` or `Flow / Omni Flash Video.source_video_media_id`; users do not need to inspect JSON or copy UUIDs. `original_prompt` is read-only historical metadata; type the new editing instruction in Omni Flash Video's prompt field. The library is an independent module and does not alter generation behavior in Nano Banana, Character Creator, Omni Flash, Upload Media, or Upscale Video.
+`Flow / Video Library` provides an end-user browser for videos tracked by Flow Agent. Click **Refresh videos**, filter generated/uploaded/upscaled items, preview one video, and select it. Connect its plain `media_id` output directly to `Flow / Omni Flash Video.source_video_media_id`; users do not need to inspect JSON or copy UUIDs. `original_prompt` is read-only historical metadata; type the new editing instruction in Omni Flash Video's prompt field. The library is an independent module and does not alter generation behavior in Nano Banana, Character Creator, Omni Flash, or Upload Media.
 
 The selected video mode determines which image sockets are used. The node rejects connected inputs that the selected mode would ignore, before contacting the paid generation endpoint. For identity work, connect individual character shots (or the `images` batch from Character Creator) to `reference_images` and select `ingredients / reference images`. A flattened contact sheet is treated as one composite picture, not as six independent character references. `start image to video` animates one specific first frame and should receive a single shot.
 
-The node displays the estimated Flow cost before generation and updates it when duration, count, or resolution changes. The verified 720p Omni 1.1 Flash cost per clip is `7/10/12/15` credits for `4/6/8/10` seconds respectively; the total is multiplied by count. Selecting 1080p uses the 720p generation cost and then runs Flow's free upsample. That creates a second asset in the Google Flow project, but the ComfyUI node returns and previews only the requested final resolution. The standalone Upsample node retains account-dependent 4K support. Flow's cheaper 360p tier remains documented upstream but is intentionally unavailable here until its internal request field is verified.
+The node displays the estimated Flow cost before generation and updates it when duration, count, or resolution changes. The verified 720p Omni 1.1 Flash cost per clip is `7/10/12/15` credits for `4/6/8/10` seconds respectively; the total is multiplied by count. Selecting 1080p uses the 720p generation cost and then runs Flow's internal free upsample pass. Flow's cheaper 360p tier remains documented upstream but is intentionally unavailable here until its internal request field is verified. There is no standalone upscale node because Google Flow's historical-video upsample contract is not stable enough for an end-user workflow.
 
 ## Character datasets
 
@@ -122,11 +121,18 @@ Flow's own `@` picker can select a different project and then choose a character
 
 Every successful image is saved immediately under `ComfyUI/output/flow_agent/characters/<dataset_id>`. The node shows a contact sheet plus every individual result in ComfyUI, and returns an IMAGE batch and a JSON manifest. Each manifest entry has a stable `shot_id`, the generated Flow `media_id`, its full prompt, saved path, status, and batch index. Partial results remain available when `continue_on_error` is enabled.
 
-To regenerate one result without rebuilding the complete dataset:
+Character Creator saves every completed dataset under `ComfyUI/output/flow_agent/characters/<dataset_id>/`, including a persistent `manifest.json`. Once generation finishes, Creator can be bypassed or removed from the active workflow.
 
-1. Connect `images` and `manifest_json` to `Flow / Select Character Shot`.
-2. Choose its `shot_number` and inspect the individual preview.
-3. Connect `shot_spec_json` to `Flow / Generate Character Shot`. With `reuse_manifest_references=true`, the node reuses the exact reference IDs recorded by the dataset; connect new wardrobe inputs only when replacing the outfit.
+To create a new version of one saved result without rebuilding the complete dataset:
+
+1. Add `Flow / 1. Choose Character Shot`; it does not connect to Character Creator.
+2. Click **Refresh datasets**, choose a saved dataset, and choose the desired shot in its visual preview.
+3. Connect `shot_spec_json` to `Flow / 2. Regenerate Chosen Shot`.
+4. Keep `reuse_manifest_references=true` to reuse the original identity and wardrobe references. The original `reference_image` connection is optional for newly saved datasets; connect it only for an older manifest without reusable IDs or when replacing references.
+
+The library node only reads local manifests and image files; it never queues Character Creator or contacts Google Flow. The second node submits one new image generation with the saved shot prompt; it does not alter the previous image or send its `media_id` as an image-edit input.
+
+Character Creator uses a stable seed of `43` and allows ComfyUI to cache its completed dataset. Running the selector or the single-shot regenerator therefore does not rebuild the upstream dataset. To intentionally create a new complete dataset, change a real Creator input (for example its reference image, preset, shot count, subject, wardrobe, or dataset name) and queue it again.
 
 `shot_id` identifies the logical pose and remains stable. `media_id` identifies one concrete Google Flow result and changes after regeneration. Retries reuse one idempotency key per shot so a transient retry does not intentionally create duplicate paid generations.
 

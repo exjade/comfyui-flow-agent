@@ -10,7 +10,7 @@ from PIL import Image
 
 torch = pytest.importorskip("torch")
 
-from comfyui_flow_agent_under_test import nodes
+from comfyui_flow_agent_under_test import flow_character_library, nodes
 
 
 class FakeClient:
@@ -324,6 +324,11 @@ def test_character_selector_and_regenerator_use_stable_shot_identity(monkeypatch
     FakeCharacterClient.generation_calls = []
     monkeypatch.setattr(nodes, "FlowAgentClient", FakeCharacterClient)
     monkeypatch.setattr(nodes, "_comfy_output_directory", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        flow_character_library,
+        "_characters_root",
+        lambda: str(tmp_path / "characters"),
+    )
 
     created = nodes.FlowCharacterCreator().generate_dataset(
         reference_image=torch.zeros((1, 4, 4, 3)),
@@ -338,11 +343,13 @@ def test_character_selector_and_regenerator_use_stable_shot_identity(monkeypatch
         preview_columns=2,
         dataset_name="Selector Test",
     )
-    images, _, manifest_json, _, _, _ = created["result"]
-    selected = nodes.FlowCharacterShotSelector().select(
-        images=images,
-        manifest_json=manifest_json,
-        shot_number=2,
+    _, _, manifest_json, dataset_id, _, _ = created["result"]
+    manifest = json.loads(manifest_json)
+    assert manifest["manifest_path"].endswith("manifest.json")
+    selected = flow_character_library.FlowCharacterShotSelector().select_saved_shot(
+        selection_json=json.dumps(
+            {"dataset_id": dataset_id, "shot_number": 2}
+        ),
     )
     selected_image, shot_spec_json, shot_id, previous_media_id, full_prompt = selected[
         "result"

@@ -1,4 +1,4 @@
 @echo off
 title Step 3.1 - Install or update Flow Agent from GitHub in local ComfyUI
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0internal\install-comfyui-local.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0internal\install-comfyui-local.ps1" %*
 pause

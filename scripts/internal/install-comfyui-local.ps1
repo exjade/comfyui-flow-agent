@@ -1,7 +1,12 @@
-param([string]$ComfyUIRoot = "")
+param(
+    [string]$ComfyUIRoot = "",
+    [switch]$Reconfigure
+)
 
 $ErrorActionPreference = "Stop"
 $Repository = "https://github.com/exjade/comfyui-flow-agent.git"
+$DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
+$LocalConfigPath = Join-Path $DataRoot "comfyui-local.config.json"
 
 function Resolve-ComfyUIRoot([string]$RequestedRoot) {
     if (-not [string]::IsNullOrWhiteSpace($RequestedRoot)) {
@@ -78,6 +83,18 @@ function Test-ComfyUIRunning([string]$Root) {
     return $false
 }
 
+if ([string]::IsNullOrWhiteSpace($ComfyUIRoot) -and -not $Reconfigure -and (Test-Path -LiteralPath $LocalConfigPath -PathType Leaf)) {
+    try {
+        $SavedConfig = Get-Content -LiteralPath $LocalConfigPath -Raw | ConvertFrom-Json
+        $SavedRoot = [string]$SavedConfig.comfyui_root
+        if ($SavedRoot -and (Test-Path -LiteralPath (Join-Path $SavedRoot "main.py") -PathType Leaf)) {
+            $ComfyUIRoot = [IO.Path]::GetFullPath($SavedRoot).TrimEnd('\')
+            Write-Host "Using saved ComfyUI installation: $ComfyUIRoot" -ForegroundColor Green
+        }
+    } catch {
+        Write-Warning "Saved ComfyUI path is invalid; detecting installations again."
+    }
+}
 $ComfyUIRoot = Resolve-ComfyUIRoot -RequestedRoot $ComfyUIRoot
 if (Test-ComfyUIRunning -Root $ComfyUIRoot) {
     throw "ComfyUI is still running. Fully close ComfyUI Desktop, then run this installer again."
@@ -126,6 +143,10 @@ if (-not $ComfyPython) {
 
 & $ComfyPython -m pip install -r (Join-Path $NodeDir "requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw "The custom node dependencies could not be installed." }
+
+New-Item -ItemType Directory -Path $DataRoot -Force | Out-Null
+@{ comfyui_root = $ComfyUIRoot } | ConvertTo-Json |
+    Set-Content -LiteralPath $LocalConfigPath -Encoding utf8
 
 Write-Host ""
 Write-Host "LOCAL CUSTOM NODE INSTALLATION COMPLETE" -ForegroundColor Green

@@ -2,6 +2,76 @@ import ast
 from pathlib import Path
 
 
+def test_standalone_upscale_node_is_not_registered_or_implemented():
+    root = Path(__file__).resolve().parents[1]
+    registration = (root / "__init__.py").read_text(encoding="utf-8")
+    nodes = (root / "nodes.py").read_text(encoding="utf-8")
+
+    assert "FlowVideoUpsample" not in registration
+    assert "class FlowVideoUpsample" not in nodes
+    assert '"FlowVideoLibrary": "Flow / Video Library"' in registration
+
+
+def test_character_single_shot_workflow_has_numbered_end_user_names():
+    root = Path(__file__).resolve().parents[1]
+    registration = (root / "__init__.py").read_text(encoding="utf-8")
+    nodes = (root / "nodes.py").read_text(encoding="utf-8")
+    library = (root / "flow_character_library.py").read_text(encoding="utf-8")
+
+    assert '"FlowCharacterShotSelector": "Flow / 1. Choose Character Shot"' in registration
+    assert '"FlowGenerateCharacterShot": "Flow / 2. Regenerate Chosen Shot"' in registration
+    assert "This node never sends a request to Google Flow" in library
+    assert "does not edit the old image pixels or media_id" in nodes
+
+
+def test_character_library_is_independent_from_creator_outputs():
+    root = Path(__file__).resolve().parents[1]
+    library = (root / "flow_character_library.py").read_text(encoding="utf-8")
+
+    assert '"selection_json": ("STRING"' in library
+    assert '"images": ("IMAGE",)' not in library
+    assert '"manifest_json": ("STRING"' not in library
+    assert "/flow-agent/character-library" in library
+
+
+def test_character_creator_is_cached_and_uses_a_stable_seed():
+    root = Path(__file__).resolve().parents[1]
+    source_path = root / "nodes.py"
+    source_text = source_path.read_text(encoding="utf-8")
+    tree = ast.parse(source_text)
+    creator = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FlowCharacterCreator"
+    )
+    creator_source = ast.get_source_segment(source_text, creator)
+
+    assert "def IS_CHANGED" not in creator_source
+    assert '"seed": ("INT", {"default": 43, "min": 43, "max": 43' in creator_source
+    assert "seed=43" in creator_source
+
+
+def test_nano_banana_seed_is_permanently_fixed_to_43():
+    root = Path(__file__).resolve().parents[1]
+    source_path = root / "nodes.py"
+    source_text = source_path.read_text(encoding="utf-8")
+    tree = ast.parse(source_text)
+    nano = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FlowNanoBanana"
+    )
+    nano_source = ast.get_source_segment(source_text, nano)
+
+    assert '"seed": ("INT", {"default": 43, "min": 43, "max": 43' in nano_source
+    assert "seed=43" in nano_source
+
+    fixed_seed_source = (root / "web" / "flow_fixed_seed.js").read_text(
+        encoding="utf-8"
+    )
+    assert '"FlowNanoBanana"' in fixed_seed_source
+    assert "seedWidget.value = 43" in fixed_seed_source
+    assert 'controlWidget.value = "fixed"' in fixed_seed_source
+
+
 def test_character_creator_does_not_use_removed_single_reference_variable():
     source_path = Path(__file__).resolve().parents[1] / "nodes.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
@@ -101,3 +171,16 @@ def test_character_status_displays_and_copies_failed_shot_error():
     assert 'mediaId.textContent = failed ? "ERROR"' in source
     assert "error.textContent = record.error" in source
     assert '(record.error || `${record.shot_id || ""}\\tfailed`)' in source
+
+
+def test_video_library_is_a_separate_visual_module():
+    root = Path(__file__).resolve().parents[1]
+    backend = (root / "flow_video_library.py").read_text(encoding="utf-8")
+    frontend = (root / "web" / "flow_video_library.js").read_text(encoding="utf-8")
+    registration = (root / "__init__.py").read_text(encoding="utf-8")
+
+    assert "class FlowVideoLibrary" in backend
+    assert '"/flow-agent/video-library"' in backend
+    assert 'name: "comfyui-flow-agent.video-library"' in frontend
+    assert 'refresh.textContent = "Refresh videos"' in frontend
+    assert '"FlowVideoLibrary": FlowVideoLibrary' in registration
