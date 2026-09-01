@@ -37,6 +37,7 @@ VIDEO_MODES = (
     "first + last frame",
     "ingredients / reference images",
     "edit source video",
+    "video to video",
 )
 VIDEO_ASPECTS = ("landscape", "portrait")
 VIDEO_DURATIONS = (4, 6, 8, 10)
@@ -59,13 +60,24 @@ def _validate_video_mode_connections(
     reference_images=None,
     extra_reference_images=(),
     reference_media_ids=(),
+    reference_video_media_ids=(),
+    reference_video_paths=(),
+    source_video_media_id="",
+    source_video_path="",
 ) -> None:
     """Reject connected image inputs that the selected paid video mode would ignore."""
 
     has_start = start_image is not None
     has_end = end_image is not None
-    has_references = bool(reference_media_ids) or reference_images is not None or any(
-        image is not None for image in extra_reference_images
+    has_references = (
+        bool(reference_media_ids)
+        or bool(reference_video_media_ids)
+        or bool(reference_video_paths)
+        or reference_images is not None
+        or any(image is not None for image in extra_reference_images)
+    )
+    has_source_video = bool(str(source_video_media_id or "").strip()) or bool(
+        str(source_video_path or "").strip()
     )
 
     if has_start and mode not in {"start image to video", "first + last frame"}:
@@ -81,10 +93,16 @@ def _validate_video_mode_connections(
     if has_references and mode not in {
         "ingredients / reference images",
         "edit source video",
+        "video to video",
     }:
         raise FlowAgentError(
             f"Reference images are connected, but mode {mode!r} would ignore them. "
             "Select 'ingredients / reference images' before generating."
+        )
+    if has_source_video and mode not in {"edit source video", "video to video"}:
+        raise FlowAgentError(
+            f"A source video is configured, but mode {mode!r} would ignore it. "
+            "Select 'edit source video' or 'video to video' before generating."
         )
 
 
@@ -105,6 +123,25 @@ def _parse_media_ids(value: str, *, maximum: int = MAX_REFERENCE_IMAGES) -> list
     if len(media_ids) > maximum:
         raise FlowAgentError(f"A maximum of {maximum} reference media IDs is supported.")
     return media_ids
+
+
+def _parse_reference_paths(value: str, *, maximum: int = MAX_REFERENCE_IMAGES) -> list[str]:
+    """Parse JSON or newline-separated local video paths without splitting drive paths."""
+    raw = (value or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = raw.splitlines()
+    if isinstance(parsed, str):
+        parsed = [parsed]
+    if not isinstance(parsed, list):
+        raise FlowAgentError("reference_video_paths must be a JSON list or one path per line.")
+    paths = list(dict.fromkeys(str(item).strip() for item in parsed if str(item).strip()))
+    if len(paths) > maximum:
+        raise FlowAgentError(f"A maximum of {maximum} reference video paths is supported.")
+    return paths
 
 
 def _upload_image_batch(client, image, *, started, timeout_seconds, max_images=10):
@@ -942,6 +979,22 @@ class FlowOmniFlashVideo:
                         "placeholder": "Existing Flow media IDs (JSON, comma, or one per line)",
                     },
                 ),
+                "reference_video_media_ids": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "placeholder": "Existing Flow video media IDs (JSON, comma, or one per line)",
+                    },
+                ),
+                "reference_video_paths": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "placeholder": "Local video paths, one per line (uploaded as ingredients)",
+                    },
+                ),
                 "source_video_media_id": ("STRING", {"default": ""}),
                 "source_video_path": ("STRING", {"default": ""}),
             },
@@ -973,6 +1026,8 @@ class FlowOmniFlashVideo:
         end_image=None,
         reference_images=None,
         reference_media_ids="",
+        reference_video_media_ids="",
+        reference_video_paths="",
         source_video_media_id="",
         source_video_path="",
         **kwargs,
@@ -984,13 +1039,15 @@ class FlowOmniFlashVideo:
             raise FlowAgentError(f"Unsupported video mode {mode!r}.")
         if duration not in VIDEO_DURATIONS:
             raise FlowAgentError("Duration must be 4, 6, 8, or 10 seconds.")
-        if mode == "edit source video" and count != 1:
+        if mode in {"edit source video", "video to video"} and count != 1:
             raise FlowAgentError("Flow Agent video editing accepts one output per request; set count to 1.")
 
         extra_reference_images = tuple(
             kwargs.get(f"reference_image_{index}") for index in range(2, 11)
         )
         direct_reference_ids = _parse_media_ids(reference_media_ids)
+        direct_video_reference_ids = _parse_media_ids(reference_video_media_ids)
+        video_reference_paths = _parse_reference_paths(reference_video_paths)
         _validate_video_mode_connections(
             mode,
             start_image=start_image,
@@ -998,6 +1055,10 @@ class FlowOmniFlashVideo:
             reference_images=reference_images,
             extra_reference_images=extra_reference_images,
             reference_media_ids=direct_reference_ids,
+            reference_video_media_ids=direct_video_reference_ids,
+            reference_video_paths=video_reference_paths,
+            source_video_media_id=source_video_media_id,
+            source_video_path=source_video_path,
         )
 
         client = FlowAgentClient.from_env()
@@ -1019,7 +1080,7 @@ class FlowOmniFlashVideo:
             if not ids:
                 raise FlowAgentError("First + last frame mode requires end_image.")
             end_id = ids[0]
-        if mode in {"ingredients / reference images", "edit source video"}:
+        if mode in {"ingredients / reference images", "edit source video", "video to video"}:
             uploaded_reference_ids = _upload_image_sources(
                 client,
                 [reference_images]
@@ -1027,16 +1088,32 @@ class FlowOmniFlashVideo:
                 started=started,
                 timeout_seconds=timeout_seconds,
             )
-            reference_ids = list(dict.fromkeys(direct_reference_ids + uploaded_reference_ids))
+            uploaded_video_reference_ids = []
+            for reference_path in video_reference_paths:
+                uploaded = client.upload_file(
+                    reference_path,
+                    timeout_seconds=_remaining(
+                        started, timeout_seconds, "uploading reference video"
+                    ),
+                )
+                uploaded_video_reference_ids.append(str(uploaded["media_id"]))
+            reference_ids = list(
+                dict.fromkeys(
+                    direct_reference_ids
+                    + uploaded_reference_ids
+                    + direct_video_reference_ids
+                    + uploaded_video_reference_ids
+                )
+            )
             if len(reference_ids) > MAX_REFERENCE_IMAGES:
                 raise FlowAgentError(
                     f"A maximum of {MAX_REFERENCE_IMAGES} combined reference images is supported."
                 )
             if mode == "ingredients / reference images" and not reference_ids:
                 raise FlowAgentError(
-                    "Ingredients mode requires reference_images or reference_media_ids (up to 10)."
+                    "Ingredients mode requires at least one image or video reference (up to 10 combined)."
                 )
-        if mode == "edit source video":
+        if mode in {"edit source video", "video to video"}:
             source_id, source_path = source_video_media_id.strip(), source_video_path.strip()
             if source_id and source_path:
                 raise FlowAgentError("Provide source_video_media_id or source_video_path, not both.")

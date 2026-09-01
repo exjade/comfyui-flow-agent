@@ -53,10 +53,18 @@ Genera o edita videos. Primero selecciona el modo y luego conecta solamente las 
 | `text to video` | Prompt |
 | `start image to video` | Prompt + `start_image` |
 | `first + last frame` | Prompt + `start_image` + `end_image` |
-| `ingredients / reference images` | Prompt + una o más referencias |
-| `edit source video` | Prompt + `source_video_media_id` o `source_video_path`; referencias opcionales |
+| `ingredients / reference images` | Prompt + una o más referencias de imagen o video |
+| `edit source video` | Prompt + un video fuente; referencias visuales opcionales |
+| `video to video` | Alias explícito de edición: un video fuente + instrucción; referencias visuales opcionales |
 
-Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/landscape y selector de 720p/1080p. En 1080p primero genera 720p y luego ejecuta el upscale interno de Flow. Usa siempre seed `43`. Antes de enviar, el nodo muestra un costo estimado y rechaza conexiones incompatibles para evitar una solicitud pagada equivocada.
+Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/landscape y selector de 720p/1080p. La edición/video-to-video admite un solo resultado. En 1080p primero genera 720p y luego ejecuta el upscale interno de Flow. Usa siempre seed `43`. Al cambiar `mode`, un módulo visual muestra sólo los controles pertinentes, atenúa sockets inactivos y explica los límites activos. Antes de enviar, el backend también rechaza entradas incompatibles para evitar una solicitud pagada equivocada. La estimación de precio se muestra en inglés (`Estimated Flow cost`).
+
+Referencias de video:
+
+- `reference_video_media_ids`: IDs existentes, normalmente conectados desde `Flow / Video Library.media_id`; admite JSON, comas o una línea por ID.
+- `reference_video_paths`: archivos accesibles desde la máquina donde se ejecuta ComfyUI, uno por línea; el nodo los carga antes de generar.
+- El máximo es 10 ingredientes combinados entre imágenes y videos.
+- `source_video_media_id`/`source_video_path` identifica el único clip que se transformará. No es lo mismo que un video ingrediente.
 
 ### `Flow / Video Library`
 
@@ -357,8 +365,8 @@ La biblioteca muestra los videos registrados por Flow Agent, con filtro, prompt,
 
 - `start image to video`: conecta una sola imagen a `start_image`.
 - `first + last frame`: conecta `start_image` y `end_image`.
-- `ingredients / reference images`: conecta imágenes individuales a las entradas de referencia.
-- `edit source video`: proporciona `source_video_media_id` o un archivo de video accesible desde el sistema donde corre ComfyUI.
+- `ingredients / reference images`: conecta imágenes individuales y/o videos mediante `reference_video_media_ids` o `reference_video_paths`.
+- `edit source video` / `video to video`: proporciona un solo `source_video_media_id` o archivo fuente accesible; añade ingredientes visuales sólo si la edición los necesita.
 
 Para conservar mejor la identidad, utiliza las imágenes individuales del personaje. Un contact sheet es una sola imagen compuesta y no equivale a seis referencias independientes.
 

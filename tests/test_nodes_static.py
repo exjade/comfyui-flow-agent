@@ -118,7 +118,10 @@ def test_video_can_reuse_existing_flow_media_ids_without_uploading_pixels():
 
     assert '"reference_media_ids": (' in source
     assert "direct_reference_ids = _parse_media_ids(reference_media_ids)" in source
-    assert "direct_reference_ids + uploaded_reference_ids" in source
+    assert "direct_reference_ids" in source
+    assert "uploaded_reference_ids" in source
+    assert "direct_video_reference_ids" in source
+    assert "uploaded_video_reference_ids" in source
 
 
 def test_omni_video_seed_is_permanently_fixed_to_43():
@@ -160,8 +163,21 @@ def test_video_preview_shows_dynamic_credit_estimate():
 
     assert '"720p": { 4: 7, 6: 10, 8: 12, 10: 15 }' in source
     assert '"360p":' not in source
-    assert "Costo estimado de Flow" in source
-    assert "upscale 1080p sin costo" in source
+    assert "Estimated Flow cost" in source
+    assert "free 1080p upscale" in source
+    assert "Costo estimado de Flow" not in source
+
+
+def test_omni_video_mode_ui_exposes_only_relevant_inputs():
+    source = (
+        Path(__file__).resolve().parents[1] / "web" / "flow_video_mode.js"
+    ).read_text(encoding="utf-8")
+
+    assert '"text to video": []' in source
+    assert '"first + last frame": ["start_image", "end_image"]' in source
+    assert '"reference_video_media_ids"' in source
+    assert '"reference_video_paths"' in source
+    assert 'count fixed to 1' in source
 
 
 def test_character_status_displays_and_copies_failed_shot_error():

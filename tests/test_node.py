@@ -155,6 +155,29 @@ def test_video_mode_rejects_start_image_before_paid_request(monkeypatch):
         )
 
 
+def test_video_mode_rejects_hidden_source_video_before_paid_request(monkeypatch):
+    class UnexpectedClient:
+        @classmethod
+        def from_env(cls):
+            raise AssertionError("Client must not be created for an invalid mode/input combination")
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", UnexpectedClient)
+
+    with pytest.raises(nodes.FlowAgentError, match="would ignore it"):
+        nodes.FlowOmniFlashVideo().generate(
+            prompt="Slow camera move",
+            mode="text to video",
+            aspect_ratio="landscape",
+            duration=8,
+            count=1,
+            resolution="720p",
+            seed=43,
+            video_model_override="",
+            timeout_seconds=1200,
+            source_video_media_id="hidden-old-source",
+        )
+
+
 def test_video_reuses_existing_flow_media_id_without_upload(monkeypatch):
     class ReuseVideoClient:
         generation_args = None
@@ -193,6 +216,90 @@ def test_video_reuses_existing_flow_media_id_without_upload(monkeypatch):
     assert ReuseVideoClient.generation_args["ref_media_ids"] == [
         "original-flow-contact-sheet"
     ]
+
+
+def test_video_ingredients_accept_existing_and_local_video_references(monkeypatch):
+    class VideoReferenceClient:
+        generation_args = None
+        uploaded_paths = []
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+        def assert_ready(self, timeout_seconds):
+            return {"status": "healthy"}
+
+        def upload_file(self, path, timeout_seconds):
+            type(self).uploaded_paths.append(path)
+            return {"media_id": f"uploaded-video-{len(type(self).uploaded_paths)}"}
+
+        def generate_videos(self, **kwargs):
+            type(self).generation_args = kwargs
+            return {"status": "succeeded", "data": []}
+
+    VideoReferenceClient.uploaded_paths = []
+    monkeypatch.setattr(nodes, "FlowAgentClient", VideoReferenceClient)
+    monkeypatch.setattr(nodes, "_download_video_result", lambda *_args, **_kwargs: "ok")
+
+    result = nodes.FlowOmniFlashVideo().generate(
+        prompt="Use the motion and lighting from the reference clips",
+        mode="ingredients / reference images",
+        aspect_ratio="landscape",
+        duration=8,
+        count=1,
+        resolution="720p",
+        seed=43,
+        video_model_override="",
+        timeout_seconds=1200,
+        reference_media_ids='["image-reference"]',
+        reference_video_media_ids='["existing-video-reference"]',
+        reference_video_paths="D:\\clips\\motion.mp4",
+    )
+
+    assert result == "ok"
+    assert VideoReferenceClient.uploaded_paths == ["D:\\clips\\motion.mp4"]
+    assert VideoReferenceClient.generation_args["ref_media_ids"] == [
+        "image-reference",
+        "existing-video-reference",
+        "uploaded-video-1",
+    ]
+
+
+def test_video_to_video_alias_uses_one_source_video(monkeypatch):
+    class VideoToVideoClient:
+        generation_args = None
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+        def assert_ready(self, timeout_seconds):
+            return {"status": "healthy"}
+
+        def generate_videos(self, **kwargs):
+            type(self).generation_args = kwargs
+            return {"status": "succeeded", "data": []}
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", VideoToVideoClient)
+    monkeypatch.setattr(nodes, "_download_video_result", lambda *_args, **_kwargs: "ok")
+
+    result = nodes.FlowOmniFlashVideo().generate(
+        prompt="Restyle this clip as hand-drawn animation",
+        mode="video to video",
+        aspect_ratio="landscape",
+        duration=8,
+        count=1,
+        resolution="720p",
+        seed=43,
+        video_model_override="",
+        timeout_seconds=1200,
+        source_video_media_id="source-video-id",
+    )
+
+    assert result == "ok"
+    assert VideoToVideoClient.generation_args["start_media_id"] == "source-video-id"
+    assert VideoToVideoClient.generation_args["is_video"] is True
 
 
 def _png_bytes(value):

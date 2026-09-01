@@ -1,0 +1,12 @@
+diff --git a/flow_server/models.py b/flow_server/models.py
+--- a/flow_server/models.py
++++ b/flow_server/models.py
+@@ -30,1 +30,1 @@ class VideoGenerationRequest(BaseModel):
+-    ref_media_ids: Optional[List[str]] = Field(None, description="Optional reference image media IDs (up to 10)")
++    ref_media_ids: Optional[List[str]] = Field(None, description="Optional image or video ingredient media IDs (up to 10 combined)")
+diff --git a/flow_server/routes/generation.py b/flow_server/routes/generation.py
+--- a/flow_server/routes/generation.py
++++ b/flow_server/routes/generation.py
+@@ -751,1 +751,1 @@ async def _generate_video(req: VideoGenerationRequest, x_client_id: Optional[str] = None):
+-                    expected_type="image",
++                    expected_type=None,

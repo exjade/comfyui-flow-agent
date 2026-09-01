@@ -14,7 +14,7 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 | `Flow / Custom Character Creator` | Generate a labeled character dataset with inline previews |
 | `Flow / 1. Choose Character Shot` | Browse saved Character Creator datasets and select an existing image |
 | `Flow / 2. Regenerate Chosen Shot` | Step 2: create a new version using that shot's saved prompt and references |
-| `Flow / Omni Flash Video` | Generate or edit video from text, frames, or ingredients |
+| `Flow / Omni Flash Video` | Generate or edit video from text, frames, image/video ingredients, or a source video |
 | `Flow / Upload Media` | Upload an image or video and return a reusable `media_id` |
 | `Flow / Video Library` | Visually browse tracked videos and reuse their `media_id` |
 
@@ -22,7 +22,7 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 
 Images support `harbor_seal`, `narwhal`, and `gem_pix_2`; 1:1, 16:9, 9:16, 4:3, and 3:4; `count` 1-20; and up to 10 references through `ref_media_ids`. Nano Banana and Character Creator use the stable seed `43`. `gem_pix_2` may create extra internal candidates, but this client strictly limits ComfyUI output to the requested `count`.
 
-Video supports text-to-video, start image, first/last frames, up to 10 ingredient images, and editing with one source video plus optional references. Durations are 4, 6, 8, or 10 seconds in landscape or portrait, with 1-4 outputs per request. Base generation currently uses 720p; selecting 1080p generates at 720p and then runs Flow's free upsample. Google Flow's newer 360p option is temporarily hidden because its internal generation schema has not yet been captured; sending the upsampler-only `resolution` field to a generation endpoint is rejected. The current upstream schema accepts only one source video.
+Video supports text-to-video, start image, first/last frames, mixed image/video ingredients, and editing with one source video plus optional visual references. Ingredient inputs accept up to 10 combined media IDs. Durations are 4, 6, 8, or 10 seconds in landscape or portrait, with 1-4 outputs per generation request and one output per video-edit request. Base generation currently uses 720p; selecting 1080p generates at 720p and then runs Flow's free upsample. Google Flow's newer 360p option is temporarily hidden because its internal generation schema has not yet been captured; sending the upsampler-only `resolution` field to a generation endpoint is rejected. The current upstream schema accepts only one source video.
 
 ## Version 1 end-user workflow
 
@@ -48,7 +48,7 @@ Character Creator is the batch generator. After it finishes, its images and `man
 
 ### Video generation and editing
 
-Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode uses reference images or existing IDs; edit-source-video uses a video selected in Video Library or a reachable local path. Omni Flash always sends seed `43`. The node rejects incompatible connected inputs before a paid request is sent.
+Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode uses reference images, video media IDs, or reachable video paths; edit/video-to-video uses one source video selected in Video Library or a reachable local path plus optional visual ingredients. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
 
 ## Verified HTTP endpoints
 
@@ -232,8 +232,9 @@ The uninstaller never removes or modifies Windows Python, external environments,
 - `Flow / Omni Flash Video` modes:
   - `start image to video` requires `start_image`.
   - `first + last frame` requires `start_image` and `end_image`.
-  - `ingredients / reference images` requires at least one reference input.
-  - `edit source video` requires `source_video_media_id` or `source_video_path`.
+  - `ingredients / reference images` accepts image references plus `reference_video_media_ids` and `reference_video_paths`, with 10 combined ingredients maximum.
+  - `edit source video` and `video to video` require exactly one source through `source_video_media_id` or `source_video_path`; visual ingredients are optional.
+  - A source video is the clip being transformed. A reference video is an ingredient used for motion, lighting, style, subject, or scene guidance.
   - Leave `video_model_override` blank to select the correct Flow model for the chosen mode and orientation. Text-to-video and image-conditioned modes do not share the same model key.
   - A requested upscale returns one final delivery to ComfyUI. The native 720p source remains in Flow Agent history instead of appearing as a second generated video.
 - Preserve returned `media_id` values to reuse media without uploading again.

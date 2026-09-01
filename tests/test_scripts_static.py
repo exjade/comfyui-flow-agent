@@ -20,6 +20,9 @@ VIDEO_RECOVERY_PATCH = (
 VIDEO_TRANSPORT_PATCH = (
     ROOT / "patches" / "flow-agent-video-upload-transport.patch"
 ).read_text(encoding="utf-8")
+VIDEO_INGREDIENT_PATCH = (
+    ROOT / "patches" / "flow-agent-video-ingredient-media.patch"
+).read_text(encoding="utf-8")
 RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(
     encoding="utf-8"
 )
@@ -82,6 +85,7 @@ def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert "flow-agent-video-reference.patch" in SETUP
     assert "flow-agent-video-recovery-upload.patch" in SETUP
     assert "flow-agent-video-upload-transport.patch" in SETUP
+    assert "flow-agent-video-ingredient-media.patch" in SETUP
     assert "Apply-BackendPatches" in SETUP
     assert '-C $FlowRepoDir apply' in SETUP
     assert '--directory=flow-agent' in SETUP
@@ -113,6 +117,7 @@ def test_start_refuses_to_run_without_required_backend_fixes():
     assert "flow-agent-video-reference.patch" in START
     assert "flow-agent-video-recovery-upload.patch" in START
     assert "flow-agent-video-upload-transport.patch" in START
+    assert "flow-agent-video-ingredient-media.patch" in START
     assert "apply --recount --reverse --check --unidiff-zero" in START
     assert "Flow Agent compatibility fixes are not installed" in START
     assert '-C $FlowAgentRepositoryDir apply' in START
@@ -122,6 +127,11 @@ def test_start_refuses_to_run_without_required_backend_fixes():
     assert '$PatchName -eq "flow-agent-video-recovery-upload.patch"' in START
     assert 'payload.get("sessionUrl")' in START
     assert 'bridge.send_message_to(client_id, message)' in START
+
+
+def test_video_ingredient_patch_accepts_image_or_video_media():
+    assert 'expected_type=None' in VIDEO_INGREDIENT_PATCH
+    assert 'image or video ingredient media IDs' in VIDEO_INGREDIENT_PATCH
 
 
 def test_conditioned_video_patch_tracks_current_omni_request_contract():

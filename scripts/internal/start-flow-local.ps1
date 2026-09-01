@@ -63,7 +63,8 @@ foreach ($PatchName in @(
     "flow-agent-media-reuse.patch",
     "flow-agent-video-reference.patch",
     "flow-agent-video-recovery-upload.patch",
-    "flow-agent-video-upload-transport.patch"
+    "flow-agent-video-upload-transport.patch",
+    "flow-agent-video-ingredient-media.patch"
 )) {
     $PatchPath = Join-Path $RepositoryRoot "patches\$PatchName"
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {

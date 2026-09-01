@@ -13,11 +13,13 @@ $BackendPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-media-reuse.pa
 $BackendVideoPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-reference.patch"
 $BackendVideoRecoveryPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-recovery-upload.patch"
 $BackendVideoTransportPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-upload-transport.patch"
+$BackendVideoIngredientPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-ingredient-media.patch"
 $BackendPatches = @(
     @{ Path = $BackendPatchPath; Name = "media reuse fix" },
     @{ Path = $BackendVideoPatchPath; Name = "conditioned-video fix" },
     @{ Path = $BackendVideoRecoveryPatchPath; Name = "stale-video recovery upload fix" },
     @{ Path = $BackendVideoTransportPatchPath; Name = "video upload bridge transport fix" }
+    @{ Path = $BackendVideoIngredientPatchPath; Name = "video ingredient media fix" }
 )
 $DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
 $ConfigPath = Join-Path $DataRoot "flow-local.config.json"

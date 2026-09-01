@@ -24,12 +24,12 @@ function updateCreditEstimate(node) {
     const count = Math.max(1, Math.min(4, Number(widgetValue(node, "count", 1)) || 1));
     const costEach = VIDEO_CREDITS[baseResolution]?.[duration];
     if (costEach == null) {
-        estimate.textContent = "Costo estimado de Flow: no disponible";
+        estimate.textContent = "Estimated Flow cost: unavailable";
         return;
     }
     const total = costEach * count;
-    const upscaleNote = resolution === "1080p" ? " + upscale 1080p sin costo" : "";
-    estimate.textContent = `Costo estimado de Flow: ${total} créditos (${costEach} × ${count})${upscaleNote}`;
+    const upscaleNote = resolution === "1080p" ? " + free 1080p upscale" : "";
+    estimate.textContent = `Estimated Flow cost: ${total} credits (${costEach} × ${count})${upscaleNote}`;
 }
 
 function createCreditEstimate(node) {
