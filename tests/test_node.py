@@ -302,6 +302,71 @@ def test_video_to_video_alias_uses_one_source_video(monkeypatch):
     assert VideoToVideoClient.generation_args["is_video"] is True
 
 
+def test_video_to_video_accepts_native_comfy_video(monkeypatch, tmp_path):
+    source_path = tmp_path / "loaded.mp4"
+    source_path.write_bytes(b"video")
+
+    class NativeVideo:
+        def get_stream_source(self):
+            return str(source_path)
+
+        def get_active_trim_window(self):
+            return 0.0, 0.0
+
+    class NativeVideoClient:
+        generation_args = None
+
+        @classmethod
+        def from_env(cls):
+            return cls()
+
+        def assert_ready(self, timeout_seconds):
+            return {"status": "healthy"}
+
+        def upload_file(self, path, timeout_seconds):
+            assert path == str(source_path)
+            return {"media_id": "uploaded-native-video"}
+
+        def generate_videos(self, **kwargs):
+            type(self).generation_args = kwargs
+            return {"status": "succeeded", "data": []}
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", NativeVideoClient)
+    monkeypatch.setattr(nodes, "_download_video_result", lambda *_args, **_kwargs: "ok")
+
+    result = nodes.FlowOmniFlashVideo().generate(
+        prompt="Restyle this clip",
+        mode="video to video",
+        aspect_ratio="landscape",
+        duration=8,
+        count=1,
+        resolution="720p",
+        seed=43,
+        video_model_override="",
+        timeout_seconds=1200,
+        source_video=NativeVideo(),
+    )
+
+    assert result == "ok"
+    assert NativeVideoClient.generation_args["start_media_id"] == "uploaded-native-video"
+
+
+def test_upload_media_blocks_wrong_selected_socket_before_client(monkeypatch):
+    class UnexpectedClient:
+        @classmethod
+        def from_env(cls):
+            raise AssertionError("Client must not be created for an invalid media selection")
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", UnexpectedClient)
+
+    with pytest.raises(nodes.FlowAgentError, match="media_type is image"):
+        nodes.FlowUploadMedia().upload(
+            media_type="image",
+            timeout_seconds=600,
+            video=object(),
+        )
+
+
 def _png_bytes(value):
     buffer = io.BytesIO()
     Image.new("RGB", (4, 4), (value, value, value)).save(buffer, format="PNG")

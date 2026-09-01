@@ -11,7 +11,7 @@ No mezcles los lanzadores de ambos modos. Elige uno según dónde esté funciona
 
 ### `Flow / Upload Media`
 
-Sirve para cargar un medio y obtener su `media_id` reutilizable. Conecta una imagen en `image` o escribe una ruta válida en `media_path`. Sus salidas `media_id` y `source_url` pueden alimentar otros nodos sin copiar UUID manualmente. El contenido idéntico puede reutilizar una carga anterior.
+Sirve para cargar un medio y obtener su `media_id` reutilizable. Primero elige `media_type = image` o `media_type = video`. El selector habilita el socket correspondiente y bloquea visualmente el otro. Después conecta exactamente una fuente: el socket nativo `IMAGE`/`VIDEO` elegido **o** una ruta válida en `media_path`, pero no ambos. Sus salidas `media_id` y `source_url` pueden alimentar otros nodos sin copiar UUID manualmente. El contenido idéntico puede reutilizar una carga anterior.
 
 ### `Flow / Nano Banana`
 
@@ -61,10 +61,11 @@ Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/land
 
 Referencias de video:
 
+- `reference_video`, `reference_video_2` y `reference_video_3`: conectan directamente la salida `VIDEO` de un nodo como **Cargar video**.
 - `reference_video_media_ids`: IDs existentes, normalmente conectados desde `Flow / Video Library.media_id`; admite JSON, comas o una línea por ID.
 - `reference_video_paths`: archivos accesibles desde la máquina donde se ejecuta ComfyUI, uno por línea; el nodo los carga antes de generar.
 - El máximo es 10 ingredientes combinados entre imágenes y videos.
-- `source_video_media_id`/`source_video_path` identifica el único clip que se transformará. No es lo mismo que un video ingrediente.
+- Para editar, conecta exactamente una fuente: `source_video` (VIDEO nativo), `source_video_media_id` o `source_video_path`. No combines las tres. El video fuente no es lo mismo que un video ingrediente.
 
 ### `Flow / Video Library`
 
@@ -90,6 +91,19 @@ Editar un video guardado
 Video Library.media_id → Omni Flash Video.source_video_media_id
                          mode: edit source video
                          prompt: nueva instrucción
+```
+
+```text
+Editar un archivo de video cargado en ComfyUI
+Cargar video.VIDEO → Omni Flash Video.source_video
+                     mode: edit source video
+                     prompt: nueva instrucción
+```
+
+```text
+Usar un archivo de video como ingrediente
+Cargar video.VIDEO → Omni Flash Video.reference_video
+                     mode: ingredients / reference images
 ```
 
 Las bibliotecas y selectores sólo leen. Nano Banana, Character Creator, Regenerate Chosen Shot y Omni Flash son los nodos que generan y pueden consumir créditos.
@@ -365,8 +379,8 @@ La biblioteca muestra los videos registrados por Flow Agent, con filtro, prompt,
 
 - `start image to video`: conecta una sola imagen a `start_image`.
 - `first + last frame`: conecta `start_image` y `end_image`.
-- `ingredients / reference images`: conecta imágenes individuales y/o videos mediante `reference_video_media_ids` o `reference_video_paths`.
-- `edit source video` / `video to video`: proporciona un solo `source_video_media_id` o archivo fuente accesible; añade ingredientes visuales sólo si la edición los necesita.
+- `ingredients / reference images`: conecta imágenes individuales y/o videos por los sockets nativos `reference_video`, mediante `reference_video_media_ids` o con `reference_video_paths`.
+- `edit source video` / `video to video`: proporciona una sola fuente mediante `source_video`, `source_video_media_id` o un archivo accesible en `source_video_path`; añade ingredientes visuales sólo si la edición los necesita.
 
 Para conservar mejor la identidad, utiliza las imágenes individuales del personaje. Un contact sheet es una sola imagen compuesta y no equivale a seis referencias independientes.
 

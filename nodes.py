@@ -22,6 +22,7 @@ from .image_utils import (
     stack_image_tensors,
     tensor_batch_to_png_data_uris,
 )
+from .video_utils import video_input_path
 
 MODEL_IDS = ("gem_pix_2", "narwhal", "harbor_seal")
 ASPECT_TO_SIZE = {
@@ -62,6 +63,8 @@ def _validate_video_mode_connections(
     reference_media_ids=(),
     reference_video_media_ids=(),
     reference_video_paths=(),
+    reference_videos=(),
+    source_video=None,
     source_video_media_id="",
     source_video_path="",
 ) -> None:
@@ -73,11 +76,14 @@ def _validate_video_mode_connections(
         bool(reference_media_ids)
         or bool(reference_video_media_ids)
         or bool(reference_video_paths)
+        or any(video is not None for video in reference_videos)
         or reference_images is not None
         or any(image is not None for image in extra_reference_images)
     )
-    has_source_video = bool(str(source_video_media_id or "").strip()) or bool(
-        str(source_video_path or "").strip()
+    has_source_video = (
+        source_video is not None
+        or bool(str(source_video_media_id or "").strip())
+        or bool(str(source_video_path or "").strip())
     )
 
     if has_start and mode not in {"start image to video", "first + last frame"}:
@@ -987,6 +993,9 @@ class FlowOmniFlashVideo:
                         "placeholder": "Existing Flow video media IDs (JSON, comma, or one per line)",
                     },
                 ),
+                "reference_video": ("VIDEO",),
+                "reference_video_2": ("VIDEO",),
+                "reference_video_3": ("VIDEO",),
                 "reference_video_paths": (
                     "STRING",
                     {
@@ -997,6 +1006,7 @@ class FlowOmniFlashVideo:
                 ),
                 "source_video_media_id": ("STRING", {"default": ""}),
                 "source_video_path": ("STRING", {"default": ""}),
+                "source_video": ("VIDEO",),
             },
         }
 
@@ -1028,8 +1038,12 @@ class FlowOmniFlashVideo:
         reference_media_ids="",
         reference_video_media_ids="",
         reference_video_paths="",
+        reference_video=None,
+        reference_video_2=None,
+        reference_video_3=None,
         source_video_media_id="",
         source_video_path="",
+        source_video=None,
         **kwargs,
     ):
         cleaned_prompt = prompt.strip()
@@ -1048,6 +1062,11 @@ class FlowOmniFlashVideo:
         direct_reference_ids = _parse_media_ids(reference_media_ids)
         direct_video_reference_ids = _parse_media_ids(reference_video_media_ids)
         video_reference_paths = _parse_reference_paths(reference_video_paths)
+        connected_reference_videos = (
+            reference_video,
+            reference_video_2,
+            reference_video_3,
+        )
         _validate_video_mode_connections(
             mode,
             start_image=start_image,
@@ -1057,6 +1076,8 @@ class FlowOmniFlashVideo:
             reference_media_ids=direct_reference_ids,
             reference_video_media_ids=direct_video_reference_ids,
             reference_video_paths=video_reference_paths,
+            reference_videos=connected_reference_videos,
+            source_video=source_video,
             source_video_media_id=source_video_media_id,
             source_video_path=source_video_path,
         )
@@ -1097,6 +1118,17 @@ class FlowOmniFlashVideo:
                     ),
                 )
                 uploaded_video_reference_ids.append(str(uploaded["media_id"]))
+            for connected_video in connected_reference_videos:
+                if connected_video is None:
+                    continue
+                with video_input_path(connected_video) as connected_video_path:
+                    uploaded = client.upload_file(
+                        connected_video_path,
+                        timeout_seconds=_remaining(
+                            started, timeout_seconds, "uploading connected reference video"
+                        ),
+                    )
+                uploaded_video_reference_ids.append(str(uploaded["media_id"]))
             reference_ids = list(
                 dict.fromkeys(
                     direct_reference_ids
@@ -1115,8 +1147,20 @@ class FlowOmniFlashVideo:
                 )
         if mode in {"edit source video", "video to video"}:
             source_id, source_path = source_video_media_id.strip(), source_video_path.strip()
-            if source_id and source_path:
-                raise FlowAgentError("Provide source_video_media_id or source_video_path, not both.")
+            source_count = sum((bool(source_id), bool(source_path), source_video is not None))
+            if source_count > 1:
+                raise FlowAgentError(
+                    "Provide exactly one source: source_video, source_video_media_id, or source_video_path."
+                )
+            if source_video is not None:
+                with video_input_path(source_video) as connected_source_path:
+                    uploaded = client.upload_file(
+                        connected_source_path,
+                        timeout_seconds=_remaining(
+                            started, timeout_seconds, "uploading connected source video"
+                        ),
+                    )
+                source_id = str(uploaded["media_id"])
             if source_path:
                 uploaded = client.upload_file(
                     source_path,
@@ -1158,10 +1202,14 @@ class FlowUploadMedia:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "media_path": ("STRING", {"default": ""}),
+                "media_type": (("image", "video"), {"default": "image"}),
                 "timeout_seconds": ("INT", {"default": 600, "min": 30, "max": 3600, "step": 30}),
             },
-            "optional": {"image": ("IMAGE",)},
+            "optional": {
+                "image": ("IMAGE",),
+                "video": ("VIDEO",),
+                "media_path": ("STRING", {"default": ""}),
+            },
         }
 
     RETURN_TYPES = ("STRING", "STRING")
@@ -1169,17 +1217,31 @@ class FlowUploadMedia:
     FUNCTION = "upload"
     CATEGORY = "Flow Agent"
 
-    def upload(self, media_path, timeout_seconds, image=None):
+    def upload(self, media_type, timeout_seconds, image=None, video=None, media_path=""):
         path = media_path.strip()
-        if bool(path) == (image is not None):
-            raise FlowAgentError("Provide exactly one source: media_path or image.")
+        if media_type not in {"image", "video"}:
+            raise FlowAgentError("media_type must be 'image' or 'video'.")
+        if media_type == "image" and video is not None:
+            raise FlowAgentError("Video is connected while media_type is image; disconnect it or select video.")
+        if media_type == "video" and image is not None:
+            raise FlowAgentError("Image is connected while media_type is video; disconnect it or select image.")
+        selected_input = image if media_type == "image" else video
+        if bool(path) == (selected_input is not None):
+            raise FlowAgentError(
+                f"Provide exactly one {media_type} source: the {media_type} socket or media_path."
+            )
         client = FlowAgentClient.from_env()
         client.assert_ready(timeout_seconds=min(15.0, float(timeout_seconds)))
-        if image is not None:
+        if media_type == "image" and image is not None:
             payload = client.upload_media(
                 tensor_batch_to_png_data_uris(image, max_images=1)[0],
                 timeout_seconds=timeout_seconds,
             )
+        elif media_type == "video" and video is not None:
+            with video_input_path(video) as connected_video_path:
+                payload = client.upload_file(
+                    connected_video_path, timeout_seconds=timeout_seconds
+                )
         else:
             payload = client.upload_file(path, timeout_seconds=timeout_seconds)
         return payload["media_id"], payload.get("url", "")

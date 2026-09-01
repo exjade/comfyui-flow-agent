@@ -18,6 +18,9 @@ const MODE_INPUTS = {
         "reference_media_ids",
         "reference_video_media_ids",
         "reference_video_paths",
+        "reference_video",
+        "reference_video_2",
+        "reference_video_3",
     ],
     "edit source video": [
         "reference_images",
@@ -33,8 +36,12 @@ const MODE_INPUTS = {
         "reference_media_ids",
         "reference_video_media_ids",
         "reference_video_paths",
+        "reference_video",
+        "reference_video_2",
+        "reference_video_3",
         "source_video_media_id",
         "source_video_path",
+        "source_video",
     ],
     "video to video": [
         "reference_images",
@@ -50,8 +57,12 @@ const MODE_INPUTS = {
         "reference_media_ids",
         "reference_video_media_ids",
         "reference_video_paths",
+        "reference_video",
+        "reference_video_2",
+        "reference_video_3",
         "source_video_media_id",
         "source_video_path",
+        "source_video",
     ],
 };
 

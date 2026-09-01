@@ -177,7 +177,21 @@ def test_omni_video_mode_ui_exposes_only_relevant_inputs():
     assert '"first + last frame": ["start_image", "end_image"]' in source
     assert '"reference_video_media_ids"' in source
     assert '"reference_video_paths"' in source
+    assert '"reference_video"' in source
+    assert '"source_video"' in source
     assert 'count fixed to 1' in source
+
+
+def test_upload_media_ui_switches_between_image_and_video():
+    root = Path(__file__).resolve().parents[1]
+    backend = (root / "nodes.py").read_text(encoding="utf-8")
+    frontend = (root / "web" / "flow_upload_media.js").read_text(encoding="utf-8")
+
+    assert '"media_type": (("image", "video")' in backend
+    assert '"video": ("VIDEO",)' in backend
+    assert 'input.name === "image" || input.name === "video"' in frontend
+    assert 'image input disabled' in frontend
+    assert 'video input disabled' in frontend
 
 
 def test_character_status_displays_and_copies_failed_shot_error():

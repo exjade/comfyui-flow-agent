@@ -30,7 +30,7 @@ The seven registered nodes have separate responsibilities. Library and selector 
 
 | Node | What the user does | What contacts Google Flow |
 |---|---|---|
-| `Flow / Upload Media` | Upload one image or a local media path and obtain a reusable `media_id` | One upload when the content is not already cached |
+| `Flow / Upload Media` | Choose image or video, then connect the matching native socket or provide one local path | One upload when the content is not already cached |
 | `Flow / Nano Banana` | Write an image prompt and optionally connect up to ten reference images | One image-generation request using seed `43` and the requested `count` |
 | `Flow / Custom Character Creator` | Provide one identity, optional wardrobe references, and choose a shot preset | One image-generation request per requested character shot |
 | `Flow / 1. Choose Character Shot` | Browse already saved character datasets and select the exact original image | Nothing; it reads local manifests and previews only |
@@ -48,7 +48,9 @@ Character Creator is the batch generator. After it finishes, its images and `man
 
 ### Video generation and editing
 
-Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode uses reference images, video media IDs, or reachable video paths; edit/video-to-video uses one source video selected in Video Library or a reachable local path plus optional visual ingredients. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
+Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode accepts reference images, native ComfyUI `VIDEO` connections, video media IDs, or reachable video paths; edit/video-to-video uses exactly one native `source_video`, one Video Library media ID, or one reachable local path plus optional visual ingredients. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
+
+`Flow / Upload Media` has an `image`/`video` selector. It enables the matching native socket and disables the other one; connect that socket or provide one `media_path`, never both. Native `VIDEO` values are exported through a small independent adapter module, so the upload and Omni nodes do not duplicate ComfyUI video handling.
 
 ## Verified HTTP endpoints
 
