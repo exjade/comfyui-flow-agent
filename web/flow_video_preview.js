@@ -19,6 +19,11 @@ function updateCreditEstimate(node) {
     if (!estimate) {
         return;
     }
+    const mode = String(widgetValue(node, "mode", "text to video"));
+    if (mode === "edit source video" || mode === "video to video") {
+        estimate.value = "Estimated Flow cost: based on source video length (up to 10s)";
+        return;
+    }
     const resolution = String(widgetValue(node, "resolution", "720p"));
     const baseResolution = resolution === "1080p" ? "720p" : resolution;
     const duration = Number(widgetValue(node, "duration", 8));
@@ -44,7 +49,7 @@ function createCreditEstimate(node) {
         value: "Estimated Flow cost: unavailable",
     });
 
-    for (const name of ["resolution", "duration", "count"]) {
+    for (const name of ["mode", "resolution", "duration", "count"]) {
         const widget = node.widgets?.find((candidate) => candidate.name === name);
         if (!widget || widget.flowAgentCreditCallbackWrapped) {
             continue;

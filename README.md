@@ -54,6 +54,8 @@ Choose the mode before connecting inputs: text-to-video needs only a prompt; sta
 
 Google Flow rejects source-video speech editing with `SPEECH_EDIT_BLOCKED`. For native `VIDEO` connections and `source_video_path`, the adapter therefore creates a temporary video-only copy with FFmpeg, uploads that silent copy, and removes it afterward; the user's original file is never modified. An already uploaded `source_video_media_id` cannot be sanitized locally, so connect the corresponding Video Library `video` output or load the original file when speech is present.
 
+For `edit source video` and `video to video`, the source clip determines the effective edit window (capped at Flow's supported 10 seconds). The duration selector is hidden in those modes and the backend reads native `VIDEO.get_duration()` before submitting. Because live Flow pricing can differ from the static generation table, the preflight label deliberately reports that edit cost depends on source length instead of presenting a potentially wrong fixed amount.
+
 ## Verified HTTP endpoints
 
 - `GET /health`

@@ -176,8 +176,8 @@ def test_omni_video_mode_ui_exposes_only_relevant_inputs():
     preview = (root / "web" / "flow_video_preview.js").read_text(encoding="utf-8")
     labels = (root / "web" / "flow_ui_label.js").read_text(encoding="utf-8")
 
-    assert '"text to video": []' in source
-    assert '"first + last frame": ["start_image", "end_image"]' in source
+    assert '"text to video": ["duration"]' in source
+    assert '"first + last frame": ["start_image", "end_image", "duration"]' in source
     assert '"reference_video_media_ids"' in source
     assert '"reference_video_paths"' in source
     assert '"reference_video"' in source
@@ -197,6 +197,8 @@ def test_omni_video_mode_ui_exposes_only_relevant_inputs():
     assert "return [width, 28]" in labels
     assert "element.style.display" in source
     assert "Math.min(size[1], 900)" in source
+    assert "Source sets duration (10s max)" in source
+    assert "based on source video length (up to 10s)" in preview
 
 
 def test_upload_media_ui_switches_between_image_and_video():
@@ -209,6 +211,17 @@ def test_upload_media_ui_switches_between_image_and_video():
     assert 'input.name === "image" || input.name === "video"' in frontend
     assert 'image input disabled' in frontend
     assert 'video input disabled' in frontend
+
+
+def test_omni_errors_are_shown_in_a_detailed_toast():
+    source = (
+        Path(__file__).resolve().parents[1] / "web" / "flow_error_toast.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'api.addEventListener("execution_error"' in source
+    assert 'detail?.node_type !== "FlowOmniFlashVideo"' in source
+    assert "SPEECH_EDIT_BLOCKED" in source
+    assert "app.extensionManager?.toast?.add" in source
 
 
 def test_character_status_displays_and_copies_failed_shot_error():

@@ -64,3 +64,17 @@ def test_video_without_audio_uses_temporary_copy_and_cleans_it(monkeypatch, tmp_
             assert handle.read() == b"silent"
     assert source_path.read_bytes() == b"source"
     assert not os.path.exists(silent_path)
+
+
+def test_flow_edit_duration_uses_source_length_and_caps_at_ten_seconds():
+    class Video:
+        def __init__(self, duration):
+            self.duration = duration
+
+        def get_duration(self):
+            return self.duration
+
+    assert video_utils.flow_edit_duration(video=Video(3.2)) == 4
+    assert video_utils.flow_edit_duration(video=Video(5.1)) == 6
+    assert video_utils.flow_edit_duration(video=Video(7.4)) == 8
+    assert video_utils.flow_edit_duration(video=Video(15.0)) == 10

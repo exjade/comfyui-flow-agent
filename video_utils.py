@@ -8,6 +8,32 @@ import subprocess
 import tempfile
 from contextlib import contextmanager
 
+FLOW_EDIT_DURATIONS = (4, 6, 8, 10)
+
+
+def flow_edit_duration(video=None, path=None, fallback=10):
+    """Map a source clip's real duration to Flow's supported edit window, capped at 10s."""
+    seconds = None
+    get_duration = getattr(video, "get_duration", None)
+    if callable(get_duration):
+        try:
+            seconds = float(get_duration())
+        except (TypeError, ValueError, RuntimeError):
+            seconds = None
+    if seconds is None and path:
+        try:
+            import av
+
+            with av.open(os.fspath(path), mode="r") as container:
+                if container.duration is not None:
+                    seconds = float(container.duration / av.time_base)
+        except (ImportError, OSError, ValueError):
+            seconds = None
+    if seconds is None or seconds <= 0:
+        return int(fallback)
+    capped = min(seconds, float(FLOW_EDIT_DURATIONS[-1]))
+    return next((duration for duration in FLOW_EDIT_DURATIONS if capped <= duration), 10)
+
 
 @contextmanager
 def video_input_path(video):

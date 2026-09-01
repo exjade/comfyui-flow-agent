@@ -364,6 +364,9 @@ def test_video_to_video_accepts_native_comfy_video(monkeypatch, tmp_path):
         def get_active_trim_window(self):
             return 0.0, 0.0
 
+        def get_duration(self):
+            return 15.0
+
     class NativeVideoClient:
         generation_args = None
 
@@ -401,6 +404,7 @@ def test_video_to_video_accepts_native_comfy_video(monkeypatch, tmp_path):
 
     assert result == "ok"
     assert NativeVideoClient.generation_args["start_media_id"] == "uploaded-native-video"
+    assert NativeVideoClient.generation_args["duration"] == 10
 
 
 def test_upload_media_blocks_wrong_selected_socket_before_client(monkeypatch):

@@ -22,7 +22,7 @@ from .image_utils import (
     stack_image_tensors,
     tensor_batch_to_png_data_uris,
 )
-from .video_utils import video_input_path, video_without_audio
+from .video_utils import flow_edit_duration, video_input_path, video_without_audio
 
 MODEL_IDS = ("gem_pix_2", "narwhal", "harbor_seal")
 ASPECT_TO_SIZE = {
@@ -1154,6 +1154,11 @@ class FlowOmniFlashVideo:
                 )
         if mode in {"edit source video", "video to video"}:
             source_id, source_path = source_video_media_id.strip(), source_video_path.strip()
+            effective_duration = flow_edit_duration(
+                video=source_video,
+                path=source_path or None,
+                fallback=10,
+            )
             source_count = sum((bool(source_id), bool(source_path), source_video is not None))
             if source_count > 1:
                 raise FlowAgentError(
@@ -1186,7 +1191,7 @@ class FlowOmniFlashVideo:
             prompt=cleaned_prompt,
             aspect=aspect_ratio,
             count=count,
-            duration=duration,
+            duration=effective_duration if mode in {"edit source video", "video to video"} else duration,
             seed=43,
             resolution=resolution,
             start_media_id=start_id,

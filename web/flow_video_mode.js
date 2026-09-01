@@ -2,9 +2,9 @@ import { app } from "../../scripts/app.js";
 import { addFlowLabel } from "./flow_ui_label.js";
 
 const MODE_INPUTS = {
-    "text to video": [],
-    "start image to video": ["start_image"],
-    "first + last frame": ["start_image", "end_image"],
+    "text to video": ["duration"],
+    "start image to video": ["start_image", "duration"],
+    "first + last frame": ["start_image", "end_image", "duration"],
     "ingredients / reference images": [
         "reference_images",
         "reference_image_2",
@@ -22,6 +22,7 @@ const MODE_INPUTS = {
         "reference_video",
         "reference_video_2",
         "reference_video_3",
+        "duration",
     ],
     "edit source video": [
         "source_video_media_id",
@@ -47,6 +48,7 @@ const MODE_INPUTS = {
 };
 
 const CONDITIONAL_WIDGETS = new Set([
+    "duration",
     "reference_media_ids",
     "reference_video_media_ids",
     "reference_video_paths",
@@ -110,8 +112,8 @@ function applyVideoMode(node) {
             "start image to video": "Requires 1 start image",
             "first + last frame": "Requires start + end images",
             "ingredients / reference images": "Requires image/video references · 10 combined max",
-            "edit source video": "Requires exactly 1 source video · references disabled · count fixed to 1",
-            "video to video": "Requires 1 source video · optional image references · count fixed to 1",
+            "edit source video": "Source sets duration (10s max) · references disabled · count fixed to 1",
+            "video to video": "Source sets duration (10s max) · optional image references · count fixed to 1",
         };
         node.flowVideoModeHelp.value = labels[mode] || "Select a video mode";
     }
