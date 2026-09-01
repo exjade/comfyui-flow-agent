@@ -9,6 +9,7 @@ from .nodes import (
     FlowUploadMedia,
     FlowVideoUpsample,
 )
+from .flow_video_library import FlowVideoLibrary
 
 
 NODE_CLASS_MAPPINGS = {
@@ -19,6 +20,7 @@ NODE_CLASS_MAPPINGS = {
     "FlowOmniFlashVideo": FlowOmniFlashVideo,
     "FlowUploadMedia": FlowUploadMedia,
     "FlowVideoUpsample": FlowVideoUpsample,
+    "FlowVideoLibrary": FlowVideoLibrary,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -28,7 +30,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FlowGenerateCharacterShot": "Flow / Generate Character Shot",
     "FlowOmniFlashVideo": "Flow / Omni Flash Video",
     "FlowUploadMedia": "Flow / Upload Media",
-    "FlowVideoUpsample": "Flow / Upsample Video",
+    # Keep the internal node key for existing workflows; only clarify its UI name.
+    "FlowVideoUpsample": "Flow / Upscale Video",
+    "FlowVideoLibrary": "Flow / Video Library",
 }
 
 WEB_DIRECTORY = "./web"

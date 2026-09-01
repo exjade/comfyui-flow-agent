@@ -250,6 +250,17 @@ class FlowAgentClient:
     def upload_image(self, png_data_uri: str, timeout_seconds: float) -> str:
         return self.upload_media(png_data_uri, timeout_seconds)["media_id"]
 
+    def list_media_history(self, timeout_seconds: float = 15.0) -> dict[str, Any]:
+        """Return Flow Agent's persistent generated/uploaded media history."""
+        payload = self._request_json(
+            "GET",
+            "/v1/history",
+            timeout_seconds=timeout_seconds,
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get("history"), list):
+            raise FlowAgentHTTPError("GET /v1/history returned an invalid history document.")
+        return payload
+
     def upload_file(self, path: str, timeout_seconds: float) -> dict[str, Any]:
         absolute = os.path.abspath(os.path.expanduser(path))
         if not os.path.isfile(absolute):

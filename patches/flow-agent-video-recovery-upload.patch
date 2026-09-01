@@ -1,0 +1,52 @@
+diff --git a/flow_engine/upload.py b/flow_engine/upload.py
+--- a/flow_engine/upload.py
++++ b/flow_engine/upload.py
+@@ -75,20 +75,14 @@ async def upload_video(
+-    # Step 1: Get session URL via extension's trpc_request
++    # Step 1: ask the extension's dedicated video-upload handler for a session.
++    # The generic tRPC proxy only returns the response body and loses the
++    # X-Upload-Session-Url header used by Google Flow.  Depending on the account,
++    # that body can also be a string instead of a mapping.  The dedicated handler
++    # normalises both cases in the browser context before replying.
+     token = bridge._flow_key
+     rid = str(uuid.uuid4())[:8]
+     fut = asyncio.get_event_loop().create_future()
+     bridge._pending[rid] = fut
+ 
+     await bridge._ws.send(json.dumps({
+         "id": rid,
+-        "method": "trpc_request",
++        "method": "upload_video",
+         "params": {
+-            "url": "https://labs.google/fx/api/upload-video?action=start",
+-            "method": "POST",
+-            "headers": {
+-                "X-Upload-Project-Id": project_id,
+-                "X-Upload-Content-Type": mime_type,
+-                "X-Upload-Content-Length": str(video_size),
+-            },
++            "projectId": project_id,
++            "videoSize": video_size,
+         },
+     }))
+@@ -102,8 +96,18 @@ async def upload_video(
+     if own_bridge:
+         await bridge.close()
+ 
+-    session_url = r.get("data", {}).get("sessionUrl", "")
+-    auth_token = token or ""
++    payload = r.get("result") if isinstance(r, dict) else None
++    if not isinstance(payload, dict):
++        error = r.get("error") if isinstance(r, dict) else None
++        raise RuntimeError(
++            f"Video upload session failed: {error or json.dumps(r)[:500]}"
++        )
++
++    session_url = payload.get("sessionUrl") or ""
++    auth_token = payload.get("token") or token or ""
+ 
+     if not session_url:
+-        raise RuntimeError(f"No session URL: {json.dumps(r)[:500]}")
++        raise RuntimeError(
++            f"No video upload session URL: {json.dumps(r)[:500]}"
++        )

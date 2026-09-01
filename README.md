@@ -16,7 +16,8 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 | `Flow / Generate Character Shot` | Regenerate one selected shot without rebuilding the dataset |
 | `Flow / Omni Flash Video` | Generate or edit video from text, frames, or ingredients |
 | `Flow / Upload Media` | Upload an image or video and return a reusable `media_id` |
-| `Flow / Upsample Video` | Upsample generated video to 1080p or 4K |
+| `Flow / Upscale Video` | Upscale an existing video to 1080p or 4K |
+| `Flow / Video Library` | Visually browse tracked videos and reuse their `media_id` |
 
 ## Confirmed capabilities
 
@@ -102,6 +103,8 @@ PY
 ```
 
 Videos are saved to `ComfyUI/output/flow_agent`. Video nodes return an inline preview, native `VIDEO`, Video Helper Suite-compatible `VHS_FILENAMES`, paths, media IDs, source URLs, and job JSON. `source_video_path` must point to a RunPod file, not a Windows path.
+
+`Flow / Video Library` provides an end-user browser for videos tracked by Flow Agent. Click **Refresh videos**, filter generated/uploaded/upscaled items, preview one video, and select it. Connect its plain `media_id` output directly to `Flow / Upscale Video.media_id` or `Flow / Omni Flash Video.source_video_media_id`; users do not need to inspect JSON or copy UUIDs. `original_prompt` is read-only historical metadata; type the new editing instruction in Omni Flash Video's prompt field. The library is an independent module and does not alter generation behavior in Nano Banana, Character Creator, Omni Flash, Upload Media, or Upscale Video.
 
 The selected video mode determines which image sockets are used. The node rejects connected inputs that the selected mode would ignore, before contacting the paid generation endpoint. For identity work, connect individual character shots (or the `images` batch from Character Creator) to `reference_images` and select `ingredients / reference images`. A flattened contact sheet is treated as one composite picture, not as six independent character references. `start image to video` animates one specific first frame and should receive a single shot.
 

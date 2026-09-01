@@ -59,13 +59,24 @@ $GitCommand = Get-Command git -ErrorAction SilentlyContinue
 if (-not $GitCommand) {
     throw "Git was not found. Run scripts\01-INSTALL-FLOW.cmd again."
 }
-foreach ($PatchName in @("flow-agent-media-reuse.patch", "flow-agent-video-reference.patch")) {
+foreach ($PatchName in @(
+    "flow-agent-media-reuse.patch",
+    "flow-agent-video-reference.patch",
+    "flow-agent-video-recovery-upload.patch"
+)) {
     $PatchPath = Join-Path $RepositoryRoot "patches\$PatchName"
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {
         throw "Required compatibility patch is missing: $PatchPath"
     }
-    & $GitCommand.Source -C $FlowAgentRepositoryDir apply --recount --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $PreviousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $GitCommand.Source -C $FlowAgentRepositoryDir apply --recount --reverse --check --unidiff-zero "--directory=$FlowAgentRepositorySubdir" $PatchPath 2>$null
+        $PatchCheckExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousErrorPreference
+    }
+    if ($PatchCheckExitCode -ne 0) {
         throw "Flow Agent compatibility fixes are not installed ($PatchName). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, before starting Local or RunPod mode."
     }
 }

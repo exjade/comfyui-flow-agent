@@ -14,6 +14,9 @@ LOCAL_INSTALLER_LAUNCHER = (
 ).read_text(encoding="utf-8")
 LOCAL_INSTALLER = (ROOT / "scripts" / "internal" / "install-comfyui-local.ps1").read_text(encoding="utf-8")
 VIDEO_PATCH = (ROOT / "patches" / "flow-agent-video-reference.patch").read_text(encoding="utf-8")
+VIDEO_RECOVERY_PATCH = (
+    ROOT / "patches" / "flow-agent-video-recovery-upload.patch"
+).read_text(encoding="utf-8")
 RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(
     encoding="utf-8"
 )
@@ -71,6 +74,7 @@ def test_status_setup_and_uninstall_support_both_modes():
 def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert "flow-agent-media-reuse.patch" in SETUP
     assert "flow-agent-video-reference.patch" in SETUP
+    assert "flow-agent-video-recovery-upload.patch" in SETUP
     assert "Apply-BackendPatches" in SETUP
     assert '-C $FlowRepoDir apply' in SETUP
     assert '--directory=flow-agent' in SETUP
@@ -90,6 +94,7 @@ def test_local_installer_enumerates_comfy_desktop_json_in_windows_powershell():
 def test_start_refuses_to_run_without_required_backend_fixes():
     assert "flow-agent-media-reuse.patch" in START
     assert "flow-agent-video-reference.patch" in START
+    assert "flow-agent-video-recovery-upload.patch" in START
     assert "apply --recount --reverse --check --unidiff-zero" in START
     assert "Flow Agent compatibility fixes are not installed" in START
     assert '-C $FlowAgentRepositoryDir apply' in START
@@ -111,6 +116,14 @@ def test_video_patch_preserves_async_failures_and_exposes_read_only_diagnostics(
     assert "VideoGenerationFailedError" in VIDEO_PATCH
     assert "/v1/media/{media_id}/status" in VIDEO_PATCH
     assert "/v1/flow-app-config" in VIDEO_PATCH
+
+
+def test_video_recovery_patch_uses_dedicated_extension_upload_contract():
+    assert '"method": "upload_video"' in VIDEO_RECOVERY_PATCH
+    assert '"projectId": project_id' in VIDEO_RECOVERY_PATCH
+    assert '"videoSize": video_size' in VIDEO_RECOVERY_PATCH
+    assert 'payload = r.get("result")' in VIDEO_RECOVERY_PATCH
+    assert 'payload.get("sessionUrl")' in VIDEO_RECOVERY_PATCH
 
 
 def test_runpod_installer_discovers_comfyui_and_its_python_without_fixed_path():

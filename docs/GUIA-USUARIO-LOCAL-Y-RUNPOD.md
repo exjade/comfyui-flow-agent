@@ -267,6 +267,15 @@ El límite combinado es de 10 imágenes de referencia. Las imágenes idénticas 
 
 ## Referencias para video
 
+### Recuperar y reutilizar un video anterior
+
+1. Añade `Flow / Video Library`.
+2. Pulsa `Refresh videos` y elige visualmente un video.
+3. Conecta `media_id` con `Flow / Upscale Video.media_id` para aumentar resolución.
+4. Para editarlo, conecta `media_id` con `Flow / Omni Flash Video.source_video_media_id` y selecciona `edit source video`.
+
+La biblioteca muestra los videos registrados por Flow Agent, con filtro, prompt, fecha y preview. No es necesario copiar UUID ni leer JSON. Los medios creados exclusivamente en la web de Google Flow y nunca vistos por Flow Agent no aparecen en este historial.
+
 - `start image to video`: conecta una sola imagen a `start_image`.
 - `first + last frame`: conecta `start_image` y `end_image`.
 - `ingredients / reference images`: conecta imágenes individuales a las entradas de referencia.

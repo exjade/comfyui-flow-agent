@@ -10,9 +10,11 @@ $LauncherRoot = Split-Path -Parent $ScriptRoot
 $RepositoryRoot = Split-Path -Parent $LauncherRoot
 $BackendPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-media-reuse.patch"
 $BackendVideoPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-reference.patch"
+$BackendVideoRecoveryPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-recovery-upload.patch"
 $BackendPatches = @(
     @{ Path = $BackendPatchPath; Name = "media reuse fix" },
-    @{ Path = $BackendVideoPatchPath; Name = "conditioned-video fix" }
+    @{ Path = $BackendVideoPatchPath; Name = "conditioned-video fix" },
+    @{ Path = $BackendVideoRecoveryPatchPath; Name = "stale-video recovery upload fix" }
 )
 $DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
 $ConfigPath = Join-Path $DataRoot "flow-local.config.json"
@@ -43,8 +45,18 @@ function Find-CommandPath([string]$Name) {
 
 function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) { return $false }
-    & $GitExe -C $FlowRepoDir apply --recount --reverse --check --unidiff-zero --directory=flow-agent $PatchPath 2>$null
-    return $LASTEXITCODE -eq 0
+    # A non-zero reverse check is the normal signal that a new patch still
+    # needs to be installed.  Do not let the script-wide Stop preference turn
+    # Git's expected stderr into a terminating NativeCommandError.
+    $PreviousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --check --unidiff-zero --directory=flow-agent $PatchPath 2>$null
+        $ExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousErrorPreference
+    }
+    return $ExitCode -eq 0
 }
 
 function Apply-BackendPatchFile([string]$GitExe, [string]$PatchPath, [string]$PatchName) {
