@@ -173,6 +173,33 @@ def test_image_count_strictly_caps_extra_gem_pix_candidates():
     assert len(items) == 1
 
 
+def test_nano_style_generation_excludes_returned_input_before_count_cap():
+    session = FakeSession(
+        [
+            FakeResponse(
+                payload={
+                    "data": [
+                        {"url": "/download/input.png", "media_id": "ref-1"},
+                        {"url": "/download/generated.png", "media_id": "generated-1"},
+                    ]
+                }
+            )
+        ]
+    )
+    client = FlowAgentClient(config(), session=session)
+    items = client.generate_images(
+        prompt="close up face",
+        model="gem_pix_2",
+        size="1024x1792",
+        count=1,
+        seed=43,
+        ref_media_ids=["ref-1"],
+        exclude_media_ids=["ref-1"],
+        timeout_seconds=30,
+    )
+    assert items == [{"url": "/download/generated.png", "media_id": "generated-1"}]
+
+
 def test_video_payload_and_processing_job_poll(monkeypatch):
     session = FakeSession(
         [

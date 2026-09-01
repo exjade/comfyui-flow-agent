@@ -279,6 +279,7 @@ class FlowAgentClient:
         count: int,
         seed: int,
         ref_media_ids: Iterable[str] = (),
+        exclude_media_ids: Iterable[str] = (),
         timeout_seconds: float,
         idempotency_key: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -307,15 +308,31 @@ class FlowAgentClient:
             raise FlowAgentHTTPError(
                 "POST /v1/images/generations returned no generated images."
             )
-        # Google occasionally returns multiple candidates for one gem_pix_2
-        # request. `n` is the public contract, so never propagate more items
-        # than the caller requested.
-        data = data[:count]
         for index, item in enumerate(data):
             if not isinstance(item, dict) or not (item.get("url") or item.get("b64_json")):
                 raise FlowAgentHTTPError(
                     f"Generated image item {index} has neither url nor b64_json."
                 )
+
+        # Some reference-image responses include the input media before the
+        # generated candidates. Filtering is opt-in so stable callers remain
+        # completely unchanged.
+        excluded = {str(value).strip() for value in exclude_media_ids if str(value).strip()}
+        if excluded:
+            data = [
+                item
+                for item in data
+                if str(item.get("media_id") or "").strip() not in excluded
+            ]
+            if not data:
+                raise FlowAgentHTTPError(
+                    "POST /v1/images/generations returned only input reference media."
+                )
+
+        # Google occasionally returns multiple candidates for one gem_pix_2
+        # request. `n` is the public contract, so never propagate more items
+        # than the caller requested.
+        data = data[:count]
         return data
 
     def generate_videos(

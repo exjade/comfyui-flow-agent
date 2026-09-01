@@ -9,7 +9,9 @@ STATUS = (ROOT / "scripts" / "internal" / "status-flow-local.ps1").read_text(enc
 UNINSTALL = (ROOT / "scripts" / "internal" / "uninstall-flow-local.ps1").read_text(encoding="utf-8")
 RUNPOD_LAUNCHER = (ROOT / "scripts" / "04-START-FLOW-RUNPOD.cmd").read_text(encoding="utf-8")
 LOCAL_LAUNCHER = (ROOT / "scripts" / "04.1-START-FLOW-LOCAL.cmd").read_text(encoding="utf-8")
-LOCAL_INSTALLER_LAUNCHER = (ROOT / "scripts" / "03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd").read_text(encoding="utf-8")
+LOCAL_INSTALLER_LAUNCHER = (
+    ROOT / "scripts" / "03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd"
+).read_text(encoding="utf-8")
 LOCAL_INSTALLER = (ROOT / "scripts" / "internal" / "install-comfyui-local.ps1").read_text(encoding="utf-8")
 VIDEO_PATCH = (ROOT / "patches" / "flow-agent-video-reference.patch").read_text(encoding="utf-8")
 RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(

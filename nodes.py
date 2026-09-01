@@ -455,6 +455,7 @@ class FlowNanoBanana:
             count=count,
             seed=seed,
             ref_media_ids=reference_ids,
+            exclude_media_ids=reference_ids,
             timeout_seconds=_remaining(started, timeout_seconds, "starting image generation"),
         )
         tensors, generated_media_ids, source_urls = [], [], []

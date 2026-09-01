@@ -136,7 +136,7 @@ The `scripts` folder contains only numbered user-facing launchers:
 | 1 | `01-INSTALL-FLOW.cmd` | Install and configure the local Flow Agent stack |
 | 2 | `02-COPY-API-KEY.cmd` | Copy the real API key without displaying it |
 | 3 | `03-SHOW-RUNPOD-INSTALL.cmd` | Show and copy the command to run in the RunPod terminal |
-| 3.1 | `03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd` | Install or update this custom node in ComfyUI Desktop |
+| 3.1 | `03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd` | Install or update this custom node from GitHub in ComfyUI Desktop |
 | 4 | `04-START-FLOW-RUNPOD.cmd` | Start Flow Agent with ngrok for a remote RunPod |
 | 4.1 | `04.1-START-FLOW-LOCAL.cmd` | Start Flow Agent directly for ComfyUI on this Windows PC |
 | 5 | `05-STATUS-FLOW.cmd` | Display local health and tunnel status |

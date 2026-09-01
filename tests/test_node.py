@@ -63,6 +63,7 @@ def test_node_uploads_reference_generates_and_batches(monkeypatch):
     assert FakeClient.generation_args["prompt"] == "product photo"
     assert FakeClient.generation_args["size"] == "1024x1365"
     assert FakeClient.generation_args["ref_media_ids"] == ["ref-1"]
+    assert FakeClient.generation_args["exclude_media_ids"] == ["ref-1"]
     assert json.loads(media_ids) == ["generated-1", "generated-2"]
     assert len(json.loads(urls)) == 2
 
@@ -269,6 +270,7 @@ def test_character_creator_previews_every_result_and_builds_manifest(monkeypatch
     assert FakeCharacterClient.generation_calls[0]["ref_media_ids"] == [
         "reference-1"
     ]
+    assert "exclude_media_ids" not in FakeCharacterClient.generation_calls[0]
     assert (
         FakeCharacterClient.generation_calls[0]["idempotency_key"]
         != FakeCharacterClient.generation_calls[1]["idempotency_key"]

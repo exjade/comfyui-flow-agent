@@ -358,6 +358,6 @@ Write-Host "LOCAL INSTALLATION COMPLETE" -ForegroundColor Green
 Write-Host "Continue with the numbered launchers in the scripts folder:"
 Write-Host "  2. 02-COPY-API-KEY.cmd"
 Write-Host "  3. 03-SHOW-RUNPOD-INSTALL.cmd"
-Write-Host "  3.1 03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd (local ComfyUI only)"
+Write-Host "  3.1 03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd (GitHub to local ComfyUI)"
 Write-Host "  4. 04-START-FLOW-RUNPOD.cmd (when ComfyUI runs on RunPod)"
 Write-Host "  4.1 04.1-START-FLOW-LOCAL.cmd (when ComfyUI runs on this PC)"

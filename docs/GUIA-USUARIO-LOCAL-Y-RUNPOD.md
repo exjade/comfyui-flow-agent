@@ -73,7 +73,7 @@ El instalador crea dos accesos directos en el escritorio:
 Antes de continuar, cierra completamente ComfyUI Desktop.
 
 1. Ejecuta `01-INSTALL-FLOW.cmd` si aún no completaste la instalación común.
-2. Ejecuta `03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd`.
+2. Ejecuta `03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd`.
 3. El instalador localizará ComfyUI Desktop y colocará el nodo en su carpeta `custom_nodes`.
 4. Ejecuta `04.1-START-FLOW-LOCAL.cmd`.
 5. Espera el mensaje `READY - Local MODE`.
@@ -100,7 +100,7 @@ No necesitas RunPod, ngrok ni copiar una URL para trabajar en Local.
 ## A3. Actualizar el nodo local
 
 1. Cierra completamente ComfyUI Desktop.
-2. Ejecuta `03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd`.
+2. Ejecuta `03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd`.
 3. Si la actualización incluye correcciones del backend Flow Agent, ejecuta también `01-INSTALL-FLOW.cmd` para instalarlas.
 4. Cuando termine, ejecuta `04.1-START-FLOW-LOCAL.cmd`.
 5. Abre nuevamente ComfyUI Desktop.
@@ -327,7 +327,7 @@ No publiques el contenido de `.env`, `SERVER_API_KEY`, `FLOW_AGENT_API_KEY`, coo
 | `01-INSTALL-FLOW.cmd` | Primera instalación o cambio del proyecto configurado |
 | `02-COPY-API-KEY.cmd` | Copiar la clave real para crear/actualizar el secreto de RunPod |
 | `03-SHOW-RUNPOD-INSTALL.cmd` | Instalar o actualizar el custom node dentro de RunPod |
-| `03.1-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd` | Instalar o actualizar el custom node de ComfyUI Desktop |
+| `03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd` | Instalar o actualizar desde GitHub el custom node de ComfyUI Desktop |
 | `04-START-FLOW-RUNPOD.cmd` | Iniciar la conexión para ComfyUI en RunPod |
 | `04.1-START-FLOW-LOCAL.cmd` | Iniciar la conexión para ComfyUI local |
 | `05-STATUS-FLOW.cmd` | Revisar modo, conexión, extensión y ngrok |
