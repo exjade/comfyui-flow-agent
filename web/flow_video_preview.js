@@ -20,7 +20,7 @@ function updateCreditEstimate(node) {
         return;
     }
     const mode = String(widgetValue(node, "mode", "text to video"));
-    if (mode === "edit source video" || mode === "video to video") {
+    if (mode === "edit source video") {
         estimate.value = "Estimated Flow cost: based on source video length (up to 10s)";
         return;
     }

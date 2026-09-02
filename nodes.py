@@ -38,7 +38,6 @@ VIDEO_MODES = (
     "first + last frame",
     "ingredients / reference images",
     "edit source video",
-    "video to video",
 )
 VIDEO_ASPECTS = ("landscape", "portrait")
 VIDEO_DURATIONS = (4, 6, 8, 10)
@@ -98,23 +97,20 @@ def _validate_video_mode_connections(
             f"end_image is connected, but mode {mode!r} would ignore it. "
             "Select 'first + last frame' before generating."
         )
-    if has_image_references and mode not in {
-        "ingredients / reference images",
-        "video to video",
-    }:
+    if has_image_references and mode != "ingredients / reference images":
         raise FlowAgentError(
             f"Reference images are connected, but mode {mode!r} would ignore them. "
-            "Select 'ingredients / reference images' or 'video to video' before generating."
+            "Select 'ingredients / reference images' before generating."
         )
     if has_video_references and mode != "ingredients / reference images":
         raise FlowAgentError(
             f"Reference videos are connected, but mode {mode!r} would ignore them. "
             "Select 'ingredients / reference images' before generating."
         )
-    if has_source_video and mode not in {"edit source video", "video to video"}:
+    if has_source_video and mode != "edit source video":
         raise FlowAgentError(
             f"A source video is configured, but mode {mode!r} would ignore it. "
-            "Select 'edit source video' or 'video to video' before generating."
+            "Select 'edit source video' before generating."
         )
 
 
@@ -1059,7 +1055,7 @@ class FlowOmniFlashVideo:
             raise FlowAgentError(f"Unsupported video mode {mode!r}.")
         if duration not in VIDEO_DURATIONS:
             raise FlowAgentError("Duration must be 4, 6, 8, or 10 seconds.")
-        if mode in {"edit source video", "video to video"} and count != 1:
+        if mode == "edit source video" and count != 1:
             raise FlowAgentError("Flow Agent video editing accepts one output per request; set count to 1.")
 
         extra_reference_images = tuple(
@@ -1107,7 +1103,7 @@ class FlowOmniFlashVideo:
             if not ids:
                 raise FlowAgentError("First + last frame mode requires end_image.")
             end_id = ids[0]
-        if mode in {"ingredients / reference images", "video to video"}:
+        if mode == "ingredients / reference images":
             uploaded_reference_ids = _upload_image_sources(
                 client,
                 [reference_images]
@@ -1152,7 +1148,7 @@ class FlowOmniFlashVideo:
                 raise FlowAgentError(
                     "Ingredients mode requires at least one image or video reference (up to 10 combined)."
                 )
-        if mode in {"edit source video", "video to video"}:
+        if mode == "edit source video":
             source_id, source_path = source_video_media_id.strip(), source_video_path.strip()
             effective_duration = flow_edit_duration(
                 video=source_video,
@@ -1191,7 +1187,7 @@ class FlowOmniFlashVideo:
             prompt=cleaned_prompt,
             aspect=aspect_ratio,
             count=count,
-            duration=effective_duration if mode in {"edit source video", "video to video"} else duration,
+            duration=effective_duration if mode == "edit source video" else duration,
             seed=43,
             resolution=resolution,
             start_media_id=start_id,

@@ -55,9 +55,8 @@ Genera o edita videos. Primero selecciona el modo y luego conecta solamente las 
 | `first + last frame` | Prompt + `start_image` + `end_image` |
 | `ingredients / reference images` | Prompt + una o más referencias de imagen o video |
 | `edit source video` | Prompt + un video fuente; todas las referencias quedan deshabilitadas |
-| `video to video` | Un video fuente + instrucción + referencias de imagen opcionales |
 
-Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/landscape y selector de 720p/1080p. La edición/video-to-video admite un solo resultado. En 1080p primero genera 720p y luego ejecuta el upscale interno de Flow. Usa siempre seed `43`. Al cambiar `mode`, un módulo visual muestra sólo los controles pertinentes, atenúa sockets inactivos y explica los límites activos. Antes de enviar, el backend también rechaza entradas incompatibles para evitar una solicitud pagada equivocada. La estimación de precio se muestra en inglés (`Estimated Flow cost`).
+Admite 4, 6, 8 o 10 segundos, entre 1 y 4 resultados, orientación portrait/landscape y selector de 720p/1080p. La edición admite un solo resultado. En 1080p primero genera 720p y luego ejecuta el upscale interno de Flow. Usa siempre seed `43`. Al cambiar `mode`, un módulo visual muestra sólo los controles pertinentes, atenúa sockets inactivos y explica los límites activos. Antes de enviar, el backend también rechaza entradas incompatibles para evitar una solicitud pagada equivocada. La estimación de precio se muestra en inglés (`Estimated Flow cost`).
 
 Referencias de video:
 
@@ -67,7 +66,7 @@ Referencias de video:
 - El máximo es 10 ingredientes combinados entre imágenes y videos.
 - Para editar, conecta exactamente una fuente: `source_video` (VIDEO nativo), `source_video_media_id` o `source_video_path`. No combines las tres. El video fuente no es lo mismo que un video ingrediente.
 - Google Flow bloquea la edición de voz con `SPEECH_EDIT_BLOCKED`. Al usar `source_video` o `source_video_path`, el nodo crea automáticamente una copia temporal sin audio, la sube y la elimina al terminar; nunca modifica el archivo original. Un `source_video_media_id` ya cargado no puede limpiarse localmente: si contiene voz, conecta la salida `video` de la biblioteca o vuelve a cargar el archivo original.
-- En `edit source video` y `video to video`, la duración la determina el clip fuente, con un máximo de 10 segundos. Por eso el selector manual se oculta y el costo se muestra como dependiente de la longitud del video, en vez de usar la tabla fija de imagen/texto a video.
+- En `edit source video`, la duración la determina el clip fuente, con un máximo de 10 segundos. Por eso el selector manual se oculta y el costo se muestra como dependiente de la longitud del video, en vez de usar la tabla fija de imagen/texto a video.
 
 ### `Flow / Video Library`
 
@@ -383,7 +382,6 @@ La biblioteca muestra los videos registrados por Flow Agent, con filtro, prompt,
 - `first + last frame`: conecta `start_image` y `end_image`.
 - `ingredients / reference images`: conecta imágenes individuales y/o videos por los sockets nativos `reference_video`, mediante `reference_video_media_ids` o con `reference_video_paths`.
 - `edit source video`: proporciona una sola fuente mediante `source_video`, `source_video_media_id` o `source_video_path`; las referencias adicionales quedan deshabilitadas.
-- `video to video`: proporciona una sola fuente y, opcionalmente, referencias de imagen. Las referencias de video adicionales quedan deshabilitadas en este modo.
 
 Para conservar mejor la identidad, utiliza las imágenes individuales del personaje. Un contact sheet es una sola imagen compuesta y no equivale a seis referencias independientes.
 

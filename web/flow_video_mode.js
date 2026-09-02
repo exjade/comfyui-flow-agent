@@ -29,22 +29,6 @@ const MODE_INPUTS = {
         "source_video_path",
         "source_video",
     ],
-    "video to video": [
-        "reference_images",
-        "reference_image_2",
-        "reference_image_3",
-        "reference_image_4",
-        "reference_image_5",
-        "reference_image_6",
-        "reference_image_7",
-        "reference_image_8",
-        "reference_image_9",
-        "reference_image_10",
-        "reference_media_ids",
-        "source_video_media_id",
-        "source_video_path",
-        "source_video",
-    ],
 };
 
 const CONDITIONAL_WIDGETS = new Set([
@@ -100,7 +84,7 @@ function applyVideoMode(node) {
         }
     }
 
-    const editing = mode === "edit source video" || mode === "video to video";
+    const editing = mode === "edit source video";
     const countWidget = node.widgets?.find((widget) => widget.name === "count");
     if (editing && countWidget) {
         countWidget.value = 1;
@@ -113,7 +97,6 @@ function applyVideoMode(node) {
             "first + last frame": "Requires start + end images",
             "ingredients / reference images": "Requires image/video references · 10 combined max",
             "edit source video": "Source sets duration (10s max) · references disabled · count fixed to 1",
-            "video to video": "Source sets duration (10s max) · optional image references · count fixed to 1",
         };
         node.flowVideoModeHelp.value = labels[mode] || "Select a video mode";
     }

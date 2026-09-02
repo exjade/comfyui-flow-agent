@@ -48,13 +48,13 @@ Character Creator is the batch generator. After it finishes, its images and `man
 
 ### Video generation and editing
 
-Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode accepts reference images, native ComfyUI `VIDEO` connections, video media IDs, or reachable video paths. `edit source video` accepts exactly one source and disables every reference input. `video to video` accepts exactly one source plus optional image references; additional video references remain exclusive to ingredients mode. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
+Choose the mode before connecting inputs: text-to-video needs only a prompt; start-image mode uses `start_image`; first/last-frame mode uses both frame inputs; ingredients mode accepts reference images, native ComfyUI `VIDEO` connections, video media IDs, or reachable video paths. `edit source video` accepts exactly one source and disables every reference input. The unreliable `video to video` source-plus-image mode is intentionally not exposed: Google may accept its asynchronous request and later reject it, or synthesize a new clip without preserving useful motion. Omni Flash always sends seed `43`. Its separate mode UI hides irrelevant widgets, dims inactive sockets, explains the active limits in English, and forces edit count to one. The backend rejects incompatible retained inputs before a paid request is sent.
 
 `Flow / Upload Media` has an `image`/`video` selector. It enables the matching native socket and disables the other one; connect that socket or provide one `media_path`, never both. Native `VIDEO` values are exported through a small independent adapter module, so the upload and Omni nodes do not duplicate ComfyUI video handling.
 
 Google Flow rejects source-video speech editing with `SPEECH_EDIT_BLOCKED`. For native `VIDEO` connections and `source_video_path`, the adapter therefore creates a temporary video-only copy with FFmpeg, uploads that silent copy, and removes it afterward; the user's original file is never modified. An already uploaded `source_video_media_id` cannot be sanitized locally, so connect the corresponding Video Library `video` output or load the original file when speech is present.
 
-For `edit source video` and `video to video`, the source clip determines the effective edit window (capped at Flow's supported 10 seconds). The duration selector is hidden in those modes and the backend reads native `VIDEO.get_duration()` before submitting. Because live Flow pricing can differ from the static generation table, the preflight label deliberately reports that edit cost depends on source length instead of presenting a potentially wrong fixed amount.
+For `edit source video`, the source clip determines the effective edit window (capped at Flow's supported 10 seconds). The duration selector is hidden and the backend reads native `VIDEO.get_duration()` before submitting. Because live Flow pricing can differ from the static generation table, the preflight label deliberately reports that edit cost depends on source length instead of presenting a potentially wrong fixed amount.
 
 ## Verified HTTP endpoints
 
@@ -240,7 +240,6 @@ The uninstaller never removes or modifies Windows Python, external environments,
   - `first + last frame` requires `start_image` and `end_image`.
   - `ingredients / reference images` accepts image references plus `reference_video_media_ids` and `reference_video_paths`, with 10 combined ingredients maximum.
   - `edit source video` requires exactly one source and disables references.
-  - `video to video` requires exactly one source and accepts optional image references; additional video references are disabled.
   - A source video is the clip being transformed. A reference video is an ingredient used for motion, lighting, style, subject, or scene guidance.
   - Leave `video_model_override` blank to select the correct Flow model for the chosen mode and orientation. Text-to-video and image-conditioned modes do not share the same model key.
   - A requested upscale returns one final delivery to ComfyUI. The native 720p source remains in Flow Agent history instead of appearing as a second generated video.

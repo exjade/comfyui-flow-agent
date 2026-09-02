@@ -14,6 +14,10 @@ torch = pytest.importorskip("torch")
 from comfyui_flow_agent_under_test import flow_character_library, nodes
 
 
+def test_video_to_video_mode_is_not_exposed():
+    assert "video to video" not in nodes.VIDEO_MODES
+
+
 class FakeClient:
     uploaded = []
     generation_args = None
@@ -203,30 +207,6 @@ def test_edit_source_video_rejects_additional_references_before_paid_request(mon
         )
 
 
-def test_video_to_video_rejects_additional_video_references_before_paid_request(monkeypatch):
-    class UnexpectedClient:
-        @classmethod
-        def from_env(cls):
-            raise AssertionError("Client must not be created for a hidden video reference")
-
-    monkeypatch.setattr(nodes, "FlowAgentClient", UnexpectedClient)
-
-    with pytest.raises(nodes.FlowAgentError, match="Reference videos are connected"):
-        nodes.FlowOmniFlashVideo().generate(
-            prompt="Use this visual style",
-            mode="video to video",
-            aspect_ratio="landscape",
-            duration=8,
-            count=1,
-            resolution="720p",
-            seed=43,
-            video_model_override="",
-            timeout_seconds=1200,
-            source_video_media_id="source-video",
-            reference_video_media_ids='["extra-video"]',
-        )
-
-
 def test_video_reuses_existing_flow_media_id_without_upload(monkeypatch):
     class ReuseVideoClient:
         generation_args = None
@@ -315,45 +295,7 @@ def test_video_ingredients_accept_existing_and_local_video_references(monkeypatc
     ]
 
 
-def test_video_to_video_alias_uses_one_source_video(monkeypatch):
-    class VideoToVideoClient:
-        generation_args = None
-
-        @classmethod
-        def from_env(cls):
-            return cls()
-
-        def assert_ready(self, timeout_seconds):
-            return {"status": "healthy"}
-
-        def generate_videos(self, **kwargs):
-            type(self).generation_args = kwargs
-            return {"status": "succeeded", "data": []}
-
-    monkeypatch.setattr(nodes, "FlowAgentClient", VideoToVideoClient)
-    monkeypatch.setattr(nodes, "_download_video_result", lambda *_args, **_kwargs: "ok")
-
-    result = nodes.FlowOmniFlashVideo().generate(
-        prompt="Restyle this clip as hand-drawn animation",
-        mode="video to video",
-        aspect_ratio="landscape",
-        duration=8,
-        count=1,
-        resolution="720p",
-        seed=43,
-        video_model_override="",
-        timeout_seconds=1200,
-        source_video_media_id="source-video-id",
-        reference_media_ids='["image-reference"]',
-    )
-
-    assert result == "ok"
-    assert VideoToVideoClient.generation_args["start_media_id"] == "source-video-id"
-    assert VideoToVideoClient.generation_args["is_video"] is True
-    assert VideoToVideoClient.generation_args["ref_media_ids"] == ["image-reference"]
-
-
-def test_video_to_video_accepts_native_comfy_video(monkeypatch, tmp_path):
+def test_edit_source_video_accepts_native_comfy_video(monkeypatch, tmp_path):
     source_path = tmp_path / "loaded.mp4"
     source_path.write_bytes(b"video")
 
@@ -391,7 +333,7 @@ def test_video_to_video_accepts_native_comfy_video(monkeypatch, tmp_path):
 
     result = nodes.FlowOmniFlashVideo().generate(
         prompt="Restyle this clip",
-        mode="video to video",
+        mode="edit source video",
         aspect_ratio="landscape",
         duration=8,
         count=1,
