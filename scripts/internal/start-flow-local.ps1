@@ -59,12 +59,34 @@ $GitCommand = Get-Command git -ErrorAction SilentlyContinue
 if (-not $GitCommand) {
     throw "Git was not found. Run scripts\01-INSTALL-FLOW.cmd again."
 }
+$ExtensionPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-flow-domain.patch"
+$ExtensionManifest = Join-Path $FlowAgentRepositoryDir "flow-extension\manifest.json"
+$ExtensionBackground = Join-Path $FlowAgentRepositoryDir "flow-extension\background.js"
+$ExtensionPopup = Join-Path $FlowAgentRepositoryDir "flow-extension\popup.js"
+$ExtensionPatchInstalled = $false
+if ((Test-Path -LiteralPath $ExtensionManifest) -and (Test-Path -LiteralPath $ExtensionBackground) -and (Test-Path -LiteralPath $ExtensionPopup)) {
+    $ManifestSource = Get-Content -LiteralPath $ExtensionManifest -Raw
+    $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+    $PopupSource = Get-Content -LiteralPath $ExtensionPopup -Raw
+    $ExtensionPatchInstalled = (
+        $ManifestSource.Contains('"https://flow.google.com/*"') -and
+        $BackgroundSource.Contains("const FLOW_URL = 'https://flow.google.com/';") -and
+        $BackgroundSource.Contains('return await chrome.tabs.get(workTabId);')
+    )
+}
+if (-not $ExtensionPatchInstalled) {
+    throw "Flow Agent extension compatibility fix is not installed (flow-agent-extension-flow-domain.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+if (-not $PopupSource.Contains('item.filename ? `${base}/download/${encodeURIComponent(item.filename)}` : item.url')) {
+    throw "Flow Agent extension media-library fix is not installed (flow-agent-extension-media-library.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
 foreach ($PatchName in @(
     "flow-agent-media-reuse.patch",
     "flow-agent-video-reference.patch",
     "flow-agent-video-recovery-upload.patch",
     "flow-agent-video-upload-transport.patch",
-    "flow-agent-video-ingredient-media.patch"
+    "flow-agent-video-ingredient-media.patch",
+    "flow-agent-image-upload-bridge.patch"
 )) {
     $PatchPath = Join-Path $RepositoryRoot "patches\$PatchName"
     if (-not (Test-Path -LiteralPath $PatchPath -PathType Leaf)) {
@@ -103,6 +125,12 @@ foreach ($PatchName in @(
         if (
             $UploadSource.Contains('bridge.send_message_to(client_id, message)') -and
             -not $UploadSource.Contains('await bridge._ws.send(json.dumps({')
+        ) { $PatchCheckExitCode = 0 }
+    } elseif ($PatchName -eq "flow-agent-image-upload-bridge.patch" -and (Test-Path -LiteralPath $I2VModule)) {
+        $I2VSource = Get-Content -LiteralPath $I2VModule -Raw
+        if (
+            $I2VSource.Contains('body, captcha_action=""') -and
+            $I2VSource.Contains('json.dumps(result, ensure_ascii=False, default=str)[:500]')
         ) { $PatchCheckExitCode = 0 }
     } else {
         $PreviousErrorPreference = $ErrorActionPreference

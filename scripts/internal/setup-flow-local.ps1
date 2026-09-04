@@ -14,12 +14,16 @@ $BackendVideoPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-ref
 $BackendVideoRecoveryPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-recovery-upload.patch"
 $BackendVideoTransportPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-upload-transport.patch"
 $BackendVideoIngredientPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-video-ingredient-media.patch"
+$BackendImageUploadPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-image-upload-bridge.patch"
+$ExtensionFlowDomainPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-flow-domain.patch"
+$ExtensionMediaLibraryPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-media-library.patch"
 $BackendPatches = @(
     @{ Path = $BackendPatchPath; Name = "media reuse fix" },
     @{ Path = $BackendVideoPatchPath; Name = "conditioned-video fix" },
     @{ Path = $BackendVideoRecoveryPatchPath; Name = "stale-video recovery upload fix" },
     @{ Path = $BackendVideoTransportPatchPath; Name = "video upload bridge transport fix" }
     @{ Path = $BackendVideoIngredientPatchPath; Name = "video ingredient media fix" }
+    @{ Path = $BackendImageUploadPatchPath; Name = "image upload bridge fix" }
 )
 $DataRoot = Join-Path $env:LOCALAPPDATA "ComfyUIFlowAgent"
 $ConfigPath = Join-Path $DataRoot "flow-local.config.json"
@@ -53,6 +57,9 @@ function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
     $PatchLeaf = Split-Path -Leaf $PatchPath
     $UploadModule = Join-Path $FlowAgentDir "flow_engine\upload.py"
     $I2VModule = Join-Path $FlowAgentDir "flow_engine\generators\i2v.py"
+    $ExtensionManifest = Join-Path $ExtensionDir "manifest.json"
+    $ExtensionBackground = Join-Path $ExtensionDir "background.js"
+    $ExtensionPopup = Join-Path $ExtensionDir "popup.js"
     $GenerationModule = Join-Path $FlowAgentDir "flow_server\routes\generation.py"
     $ModelsModule = Join-Path $FlowAgentDir "flow_server\models.py"
     if (
@@ -86,6 +93,26 @@ function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
             $UploadSource.Contains('bridge.send_message_to(client_id, message)') -and
             -not $UploadSource.Contains('await bridge._ws.send(json.dumps({')
         )
+    }
+    if ($PatchLeaf -eq "flow-agent-image-upload-bridge.patch" -and (Test-Path -LiteralPath $I2VModule)) {
+        $I2VSource = Get-Content -LiteralPath $I2VModule -Raw
+        return (
+            $I2VSource.Contains('body, captcha_action=""') -and
+            $I2VSource.Contains('json.dumps(result, ensure_ascii=False, default=str)[:500]')
+        )
+    }
+    if ($PatchLeaf -eq "flow-agent-extension-flow-domain.patch" -and (Test-Path -LiteralPath $ExtensionManifest) -and (Test-Path -LiteralPath $ExtensionBackground)) {
+        $ManifestSource = Get-Content -LiteralPath $ExtensionManifest -Raw
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        return (
+            $ManifestSource.Contains('"https://flow.google.com/*"') -and
+            $BackgroundSource.Contains("const FLOW_URL = 'https://flow.google.com/';") -and
+            $BackgroundSource.Contains('return await chrome.tabs.get(workTabId);')
+        )
+    }
+    if ($PatchLeaf -eq "flow-agent-extension-media-library.patch" -and (Test-Path -LiteralPath $ExtensionPopup)) {
+        $PopupSource = Get-Content -LiteralPath $ExtensionPopup -Raw
+        return $PopupSource.Contains('item.filename ? `${base}/download/${encodeURIComponent(item.filename)}` : item.url')
     }
     # A non-zero reverse check is the normal signal that a new patch still
     # needs to be installed.  Do not let the script-wide Stop preference turn
@@ -122,6 +149,30 @@ function Apply-BackendPatches([string]$GitExe) {
     foreach ($Patch in $BackendPatches) {
         Apply-BackendPatchFile $GitExe $Patch.Path $Patch.Name
     }
+}
+
+function Apply-ExtensionPatch([string]$GitExe) {
+    if (Test-BackendPatchApplied $GitExe $ExtensionFlowDomainPatchPath) {
+        Write-Host "Flow Agent extension Flow-domain fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionFlowDomainPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension Flow-domain fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionFlowDomainPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension Flow-domain fix could not be installed." }
+    Write-Host "Installed Flow Agent extension Flow-domain fix." -ForegroundColor Green
+}
+
+function Apply-ExtensionMediaLibraryPatch([string]$GitExe) {
+    if (Test-BackendPatchApplied $GitExe $ExtensionMediaLibraryPatchPath) {
+        Write-Host "Flow Agent extension media-library fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionMediaLibraryPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension media-library fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionMediaLibraryPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension media-library fix could not be installed." }
+    Write-Host "Installed Flow Agent extension media-library fix." -ForegroundColor Green
 }
 
 function Install-WingetPackage(
@@ -257,6 +308,16 @@ if (-not $BrowserExe) {
 Write-Step "2/7 Downloading Flow Agent"
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
+    $ExtensionMediaPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionMediaLibraryPatchPath
+    if ($ExtensionMediaPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionMediaLibraryPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent extension media-library fix could not be prepared for update." }
+    }
+    $ExtensionPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionFlowDomainPatchPath
+    if ($ExtensionPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionFlowDomainPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent extension Flow-domain fix could not be prepared for update." }
+    }
     $AppliedBackendPatches = @(
         $BackendPatches | Where-Object { Test-BackendPatchApplied $GitExe $_.Path }
     )
@@ -270,6 +331,8 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
         foreach ($Patch in $AppliedBackendPatches) {
             Apply-BackendPatchFile $GitExe $Patch.Path $Patch.Name
         }
+        if ($ExtensionPatchWasApplied) { Apply-ExtensionPatch $GitExe }
+        if ($ExtensionMediaPatchWasApplied) { Apply-ExtensionMediaLibraryPatch $GitExe }
         throw "Flow Agent could not be updated."
     }
 } elseif (Test-Path -LiteralPath $FlowRepoDir) {
@@ -280,6 +343,8 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
     $CreatedFlowRepository = $true
 }
 Apply-BackendPatches $GitExe
+Apply-ExtensionPatch $GitExe
+Apply-ExtensionMediaLibraryPatch $GitExe
 
 Write-Step "3/7 Preparing the isolated runtime and dependencies"
 Push-Location $FlowAgentDir

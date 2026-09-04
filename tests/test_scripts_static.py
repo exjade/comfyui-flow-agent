@@ -23,6 +23,15 @@ VIDEO_TRANSPORT_PATCH = (
 VIDEO_INGREDIENT_PATCH = (
     ROOT / "patches" / "flow-agent-video-ingredient-media.patch"
 ).read_text(encoding="utf-8")
+IMAGE_UPLOAD_PATCH = (
+    ROOT / "patches" / "flow-agent-image-upload-bridge.patch"
+).read_text(encoding="utf-8")
+EXTENSION_FLOW_DOMAIN_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-flow-domain.patch"
+).read_text(encoding="utf-8")
+EXTENSION_MEDIA_LIBRARY_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-media-library.patch"
+).read_text(encoding="utf-8")
 RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(
     encoding="utf-8"
 )
@@ -86,6 +95,7 @@ def test_setup_installs_media_and_conditioned_video_backend_fixes():
     assert "flow-agent-video-recovery-upload.patch" in SETUP
     assert "flow-agent-video-upload-transport.patch" in SETUP
     assert "flow-agent-video-ingredient-media.patch" in SETUP
+    assert "flow-agent-image-upload-bridge.patch" in SETUP
     assert "Apply-BackendPatches" in SETUP
     assert '-C $FlowRepoDir apply' in SETUP
     assert '--directory=flow-agent' in SETUP
@@ -118,6 +128,7 @@ def test_start_refuses_to_run_without_required_backend_fixes():
     assert "flow-agent-video-recovery-upload.patch" in START
     assert "flow-agent-video-upload-transport.patch" in START
     assert "flow-agent-video-ingredient-media.patch" in START
+    assert "flow-agent-image-upload-bridge.patch" in START
     assert "apply --recount --reverse --check --unidiff-zero" in START
     assert "Flow Agent compatibility fixes are not installed" in START
     assert '-C $FlowAgentRepositoryDir apply' in START
@@ -175,6 +186,27 @@ def test_video_upload_transport_patch_supports_fastapi_and_raw_websockets():
     assert "bridge._select_client()" in VIDEO_TRANSPORT_PATCH
     assert "bridge.send_message_to(client_id" in VIDEO_TRANSPORT_PATCH
     assert "bridge.http_registry.get_flow_key()" in VIDEO_TRANSPORT_PATCH
+
+
+def test_image_upload_patch_avoids_video_captcha_and_preserves_real_error():
+    assert 'body, captcha_action=""' in IMAGE_UPLOAD_PATCH
+    assert 'err = result.get("error")' in IMAGE_UPLOAD_PATCH
+    assert "json.dumps(result, ensure_ascii=False, default=str)[:500]" in IMAGE_UPLOAD_PATCH
+    assert '$PatchLeaf -eq "flow-agent-image-upload-bridge.patch"' in SETUP
+    assert '$PatchName -eq "flow-agent-image-upload-bridge.patch"' in START
+
+
+def test_extension_patch_supports_current_flow_domain_and_valid_retry_tab():
+    assert '"https://flow.google.com/*"' in EXTENSION_FLOW_DOMAIN_PATCH
+    assert "const FLOW_URL = 'https://flow.google.com/';" in EXTENSION_FLOW_DOMAIN_PATCH
+    assert "return await chrome.tabs.get(workTabId);" in EXTENSION_FLOW_DOMAIN_PATCH
+    assert 'item.filename ? `${base}/download/${encodeURIComponent(item.filename)}` : item.url' in EXTENSION_MEDIA_LIBRARY_PATCH
+    assert "return retryTabs[0];" in EXTENSION_FLOW_DOMAIN_PATCH
+    assert "Apply-ExtensionPatch" in SETUP
+    assert "Apply-ExtensionMediaLibraryPatch" in SETUP
+    assert "flow-agent-extension-flow-domain.patch" in START
+    assert 'Join-Path $FlowAgentRepositoryDir "flow-extension\\manifest.json"' in START
+    assert 'Join-Path $FlowAgentRepositoryDir "flow-extension\\background.js"' in START
 
 
 def test_runpod_installer_discovers_comfyui_and_its_python_without_fixed_path():

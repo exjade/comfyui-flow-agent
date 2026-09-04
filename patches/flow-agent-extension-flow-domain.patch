@@ -1,0 +1,59 @@
+diff --git a/flow-extension/manifest.json b/flow-extension/manifest.json
+--- a/flow-extension/manifest.json
++++ b/flow-extension/manifest.json
+@@ -19,6 +19,7 @@
+   ],
+   "host_permissions": [
+     "https://labs.google/*",
++    "https://flow.google.com/*",
+     "https://aisandbox-pa.googleapis.com/*",
+     "https://aisandbox-pa.sandbox.googleapis.com/*",
+     "https://storage.googleapis.com/*",
+@@ -35,7 +36,8 @@
+       "matches": [
+         "https://labs.google/fx/tools/flow*",
+-        "https://labs.google/fx/*/tools/flow*"
++        "https://labs.google/fx/*/tools/flow*",
++        "https://flow.google.com/*"
+       ],
+       "js": [
+         "content.js"
+@@ -49,7 +51,8 @@
+       "resources": [
+         "injected.js"
+       ],
+       "matches": [
+-        "https://labs.google/*"
++        "https://labs.google/*",
++        "https://flow.google.com/*"
+       ]
+     }
+   ],
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -153,7 +153,7 @@
+     sendToAgent({ type: 'token_captured', flowKey, clientId: extensionClientId });
+   },
+-  { urls: ['https://aisandbox-pa.googleapis.com/*', 'https://labs.google/*'] },
++  { urls: ['https://aisandbox-pa.googleapis.com/*', 'https://labs.google/*', 'https://flow.google.com/*'] },
+   ['requestHeaders', 'extraHeaders'],
+ );
+@@ -165,2 +165,6 @@
+-const FLOW_TAB_URLS = ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'];
+-const FLOW_URL = 'https://labs.google/fx/tools/flow';
++const FLOW_TAB_URLS = [
++  'https://flow.google.com/*',
++  'https://labs.google/fx/tools/flow*',
++  'https://labs.google/fx/*/tools/flow*',
++];
++const FLOW_URL = 'https://flow.google.com/';
+@@ -251,7 +255,7 @@
+   }
+ 
+   scheduleFlowTabClose();
+-  return retryTabs[0];
++  return await chrome.tabs.get(workTabId);
+ }
+ 
+ async function getOrOpenFlowTab() {

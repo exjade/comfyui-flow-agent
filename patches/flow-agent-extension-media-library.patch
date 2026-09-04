@@ -1,0 +1,13 @@
+diff --git a/flow-extension/popup.js b/flow-extension/popup.js
+--- a/flow-extension/popup.js
++++ b/flow-extension/popup.js
+@@ -150,2 +150,6 @@
+     }
+-    grid.innerHTML = items.map((item) => {
+-      const rawUrl = safeUrl(item.url);
++    grid.innerHTML = items.map((item) => {
++      // History may contain the public ngrok URL from the generation session.
++      // The extension runs beside Flow Agent, so use its stable local download
++      // endpoint whenever a managed filename is available.
++      const managedUrl = item.filename ? `${base}/download/${encodeURIComponent(item.filename)}` : item.url;
++      const rawUrl = safeUrl(managedUrl);

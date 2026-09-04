@@ -434,7 +434,8 @@ def test_character_creator_previews_every_result_and_builds_manifest(monkeypatch
     ]
     assert json.loads(media_ids_json) == ["character-1", "character-2"]
     assert len(json.loads(paths_json)) == 2
-    assert len(response["ui"]["images"]) == 3  # Contact sheet plus every image.
+    assert len(response["ui"]["images"]) == 2  # Exactly the generated shots.
+    assert all(item["filename"] != "000_contact_sheet.png" for item in response["ui"]["images"])
     assert len(FakeCharacterClient.uploaded) == 1
     assert len(FakeCharacterClient.generation_calls) == 2
     assert FakeCharacterClient.generation_calls[0]["ref_media_ids"] == [

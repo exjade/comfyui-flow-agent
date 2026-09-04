@@ -768,7 +768,10 @@ class FlowCharacterCreator:
         )
         return {
             "ui": {
-                "images": [contact_preview, *previews],
+                # The contact sheet has its own explicit output. Keep this gallery
+                # one-to-one with the generated shots so 16 shots display as 16,
+                # never as an unexplained batch of 17.
+                "images": previews,
                 "character_dataset": [json.dumps(ui_summary, ensure_ascii=False)],
             },
             "result": result,
