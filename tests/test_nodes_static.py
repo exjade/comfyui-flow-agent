@@ -72,6 +72,24 @@ def test_nano_banana_seed_is_permanently_fixed_to_43():
     assert 'controlWidget.value = "fixed"' in fixed_seed_source
 
 
+def test_character_regenerator_seed_is_permanently_fixed_to_43():
+    root = Path(__file__).resolve().parents[1]
+    source_text = (root / "nodes.py").read_text(encoding="utf-8")
+    tree = ast.parse(source_text)
+    regenerator = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FlowGenerateCharacterShot"
+    )
+    source = ast.get_source_segment(source_text, regenerator)
+    assert '"seed": ("INT", {"default": 43, "min": 43, "max": 43' in source
+    assert "seed=43" in source
+    assert '"seed": 43' in source
+
+    fixed_seed_source = (root / "web" / "flow_fixed_seed.js").read_text(encoding="utf-8")
+    assert '"FlowCharacterCreator"' in fixed_seed_source
+    assert '"FlowGenerateCharacterShot"' in fixed_seed_source
+
+
 def test_character_creator_does_not_use_removed_single_reference_variable():
     source_path = Path(__file__).resolve().parents[1] / "nodes.py"
     tree = ast.parse(source_path.read_text(encoding="utf-8"))

@@ -550,5 +550,7 @@ def test_character_selector_and_regenerator_use_stable_shot_identity(monkeypatch
     assert new_media_id == "character-1"
     assert record["replaces_media_id"] == previous_media_id
     assert record["shot_id"] == shot_id
+    assert FakeCharacterClient.generation_calls[0]["seed"] == 43
+    assert record["seed"] == 43
     assert saved_path
     assert regenerated["ui"]["images"][0]["filename"]

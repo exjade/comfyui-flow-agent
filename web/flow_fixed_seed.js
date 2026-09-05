@@ -1,6 +1,10 @@
 import { app } from "../../scripts/app.js";
 
-const FIXED_SEED_NODES = new Set(["FlowNanoBanana"]);
+const FIXED_SEED_NODES = new Set([
+    "FlowNanoBanana",
+    "FlowCharacterCreator",
+    "FlowGenerateCharacterShot",
+]);
 
 function forceFixedSeed(node) {
     const seedWidget = node.widgets?.find((widget) => widget.name === "seed");

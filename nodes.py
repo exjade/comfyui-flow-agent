@@ -785,7 +785,7 @@ class FlowGenerateCharacterShot:
             "required": {
                 "shot_spec_json": ("STRING", {"multiline": True, "default": ""}),
                 "model": (MODEL_IDS, {"default": "gem_pix_2"}),
-                "seed": ("INT", {"default": 43, "min": 0, "max": 4294967295, "step": 1}),
+                "seed": ("INT", {"default": 43, "min": 43, "max": 43, "step": 1}),
                 "retry_count": ("INT", {"default": 1, "min": 0, "max": 3, "step": 1}),
                 "timeout_seconds": (
                     "INT",
@@ -906,7 +906,7 @@ class FlowGenerateCharacterShot:
                     model=model,
                     size=ASPECT_TO_SIZE[selected_aspect],
                     count=1,
-                    seed=seed,
+                    seed=43,
                     ref_media_ids=reference_ids,
                     timeout_seconds=float(timeout_seconds),
                     idempotency_key=idempotency_key,
@@ -933,7 +933,7 @@ class FlowGenerateCharacterShot:
             **spec,
             "status": "regenerated",
             "model": model,
-            "seed": seed,
+            "seed": 43,
             "media_id": media_id,
             "source_url": item.get("url"),
             "aspect_ratio": selected_aspect,
