@@ -184,26 +184,90 @@ The `scripts` folder contains only numbered user-facing launchers:
 | 6 | `06-STOP-FLOW.cmd` | Stop Flow Agent and ngrok |
 | 7 | `07-UNINSTALL-FLOW.cmd` | Safely remove installer-owned local data |
 
-On a new Windows computer, begin with step 1. The assistant installs missing tools, clones and prepares Flow Agent in an isolated environment, configures ngrok, guides extension loading, collects a Google Flow project URL, generates a secure API key, and creates private local configuration and a desktop shortcut.
+### Local ComfyUI Desktop
 
-For RunPod, run steps 2, 3, and 4 in order. Step 3 copies the RunPod terminal command to the clipboard and does not execute it on Windows. The user must still sign in to Google, load the unpacked extension, provide their own ngrok authtoken, and save the two RunPod environment variables.
-
-For a local ComfyUI Desktop installation, run steps 1, 3.1, and 4.1. Step 3.1 reads Comfy Desktop's installation registry, selects the installed local instance, clones or safely updates this repository under `custom_nodes`, and installs requirements with that instance's own Python. Existing local modifications are saved in a recoverable Git stash before updating. Step 4.1 uses `http://127.0.0.1:8001`, does not start ngrok, and securely configures `FLOW_AGENT_BASE_URL` and `FLOW_AGENT_API_KEY` as Windows user variables. Fully close and reopen ComfyUI Desktop after the first local start so it inherits those variables.
-
-After initial local setup, the normal daily action is only `04.1-START-FLOW-LOCAL.cmd`. Run step 3.1 again when updating the custom node from GitHub. Step 3.1 updates the ComfyUI node only; rerun step 1 when an update includes Flow Agent backend compatibility patches. The step 4 launchers verify both required backend patches before starting, preventing a partially updated installation from reaching a paid generation request.
-
-Start Flow Agent through the desktop shortcut or:
+For the first installation, run these launchers in order:
 
 ```text
-scripts\04-START-FLOW-RUNPOD.cmd
+01-INSTALL-FLOW.cmd
+03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd
+04.1-START-FLOW-LOCAL.cmd
 ```
 
-The RunPod launcher starts or reuses ngrok, updates `PUBLIC_BASE_URL`, starts Flow Agent when needed, opens the configured project, and copies the public URL. Paste it into `FLOW_AGENT_BASE_URL` and restart the remote ComfyUI.
+Completely close and reopen ComfyUI Desktop afterward so it inherits the local connection settings.
 
-For local ComfyUI use:
+For normal daily use, run only:
 
 ```text
-scripts\04.1-START-FLOW-LOCAL.cmd
+04.1-START-FLOW-LOCAL.cmd
+```
+
+To update only the custom node, completely close ComfyUI Desktop and run:
+
+```text
+03.1-GITHUB-INSTALL-OR-UPDATE-CUSTOM-NODE-LOCAL.cmd
+04.1-START-FLOW-LOCAL.cmd
+```
+
+If an update also changes the Flow Agent backend or browser extension, run:
+
+```text
+06-STOP-FLOW.cmd
+01-INSTALL-FLOW.cmd
+04.1-START-FLOW-LOCAL.cmd
+```
+
+Then reload **Flow Agent** on `chrome://extensions`.
+
+### Remote ComfyUI on RunPod
+
+For the first installation on Windows, run:
+
+```text
+01-INSTALL-FLOW.cmd
+02-COPY-API-KEY.cmd
+03-SHOW-RUNPOD-INSTALL.cmd
+```
+
+Step 2 copies the real API key without displaying it. Step 3 copies the installation command that must be pasted into the RunPod terminal; it does not execute that command on Windows.
+
+Configure `FLOW_AGENT_BASE_URL` and `FLOW_AGENT_API_KEY` in RunPod as described in [RunPod configuration](#runpod-configuration), then run on Windows:
+
+```text
+04-START-FLOW-RUNPOD.cmd
+```
+
+Restart ComfyUI inside RunPod after saving or changing its environment variables.
+
+For normal daily use, run `04-START-FLOW-RUNPOD.cmd` on Windows. It starts or reuses ngrok, starts Flow Agent, opens the configured Google Flow project, and copies the current public URL. If that URL changed, update `FLOW_AGENT_BASE_URL` in RunPod and restart ComfyUI there.
+
+To update the custom node in the documented RunPod layout, run:
+
+```bash
+cd /workspace/runpod-slim/ComfyUI/custom_nodes/comfyui-flow-agent
+git pull --ff-only
+```
+
+Then restart ComfyUI. If that folder does not exist, use the installation command copied by `03-SHOW-RUNPOD-INSTALL.cmd`; its installer discovers the actual ComfyUI path automatically.
+
+If an update also changes the Windows Flow Agent backend or extension, run on Windows:
+
+```text
+06-STOP-FLOW.cmd
+01-INSTALL-FLOW.cmd
+04-START-FLOW-RUNPOD.cmd
+```
+
+Reload **Flow Agent** on `chrome://extensions`, keep the correct project open at `https://flow.google.com/`, and restart ComfyUI in RunPod.
+
+### Quick order
+
+```text
+Local first installation: 01 -> 03.1 -> 04.1
+Local daily use:          04.1
+
+RunPod first installation: 01 -> 02 -> 03 -> configure RunPod -> 04
+RunPod daily use:          04
 ```
 
 Both launchers share the same backend, project, status, and stop scripts. Switching modes updates `PUBLIC_BASE_URL` and safely restarts the managed backend when required. `05-STATUS-FLOW.cmd` reports the selected mode; `06-STOP-FLOW.cmd` works for either mode and closes an existing managed ngrok tunnel only when one is present.
