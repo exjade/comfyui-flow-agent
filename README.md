@@ -270,6 +270,66 @@ RunPod first installation: 01 -> 02 -> 03 -> configure RunPod -> 04
 RunPod daily use:          04
 ```
 
+### Browser extension compatibility and installation
+
+Install the unpacked **Flow Agent** extension in the same browser profile that you use for Google Flow. You only need one active browser installation; do not run the bridge in Chrome and Firefox at the same time.
+
+The current extension is supported on **Google Chrome and Chromium-based browsers**. During `01-INSTALL-FLOW.cmd`, enable Developer mode, choose **Load unpacked**, and select:
+
+```text
+C:\Users\YOUR_USER\FlowAgent\flow-agent\flow-extension
+```
+
+After an installer update changes the extension, open `chrome://extensions` and click **Reload** on Flow Agent. Keep the intended account signed in and its project open at `https://flow.google.com/` while generating.
+
+**Mozilla Firefox is not currently supported by this extension build.** Firefox uses `sidebar_action`/`sidebarAction`, while the installed Chromium manifest uses `side_panel`/`sidePanel`. A separate Firefox manifest and compatibility pass are required before Firefox installation can be documented as supported. Loading the current folder as a temporary Firefox add-on is therefore not part of the supported setup.
+
+### Daily Flow limit and switching an authorized account/project
+
+In observed use, one account may reach its daily image-generation allowance after approximately **200–220 Nano Banana images**. This is an estimate, not an official or guaranteed quota: Google may vary availability by account, plan, model, region, demand, or policy.
+
+When an account reaches its limit, wait for Google to reset it or switch only to another Google account that you own or are authorized to use, in accordance with Google's terms. Flow Agent needs both the browser session and `DEFAULT_PROJECT` to point to the new account/project.
+
+1. Stop the managed bridge:
+
+   ```text
+   06-STOP-FLOW.cmd
+   ```
+
+2. In the browser profile containing the Flow Agent extension, sign out of the current Google Flow account.
+3. Sign in to the authorized replacement account at `https://flow.google.com/`.
+4. Create or open a project and copy its complete URL. It looks like:
+
+   ```text
+   https://flow.google.com/project/NEW_PROJECT_ID
+   ```
+
+5. Open the local Flow Agent configuration file:
+
+   ```text
+   C:\Users\YOUR_USER\FlowAgent\flow-agent\flow-agent\.env
+   ```
+
+6. Replace only the `DEFAULT_PROJECT` value with the new project ID from the URL:
+
+   ```env
+   DEFAULT_PROJECT=NEW_PROJECT_ID
+   ```
+
+   Keep the existing `SERVER_API_KEY`, ngrok configuration, ports, and other settings unchanged.
+
+7. Save `.env`, reload the Google Flow tab, and use **Refresh Token** in the Flow Agent extension if its token status does not update.
+8. Start the correct mode again:
+
+   ```text
+   Local ComfyUI: 04.1-START-FLOW-LOCAL.cmd
+   RunPod:         04-START-FLOW-RUNPOD.cmd
+   ```
+
+9. For RunPod, if the launcher produces a different ngrok URL, update `FLOW_AGENT_BASE_URL` and restart ComfyUI in RunPod. Changing the Google account/project does not require changing `FLOW_AGENT_API_KEY`.
+
+If requests still use the previous account, fully close the old Flow tabs, confirm the new account avatar, reload the extension, press **Refresh Token**, and restart the selected launcher.
+
 Both launchers share the same backend, project, status, and stop scripts. Switching modes updates `PUBLIC_BASE_URL` and safely restarts the managed backend when required. `05-STATUS-FLOW.cmd` reports the selected mode; `06-STOP-FLOW.cmd` works for either mode and closes an existing managed ngrok tunnel only when one is present.
 
 The upstream extension's **Generate with Flow** button currently calls the protected HTTP endpoint without `SERVER_API_KEY`. With authentication enabled, that convenience button returns HTTP 401. This does not prevent the extension from acting as the Flow bridge; submit protected generation requests through this ComfyUI integration instead. Do not disable authentication on an internet-exposed ngrok endpoint to make that button work.
