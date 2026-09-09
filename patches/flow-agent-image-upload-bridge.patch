@@ -1,0 +1,38 @@
+diff --git a/flow_engine/generators/i2v.py b/flow_engine/generators/i2v.py
+--- a/flow_engine/generators/i2v.py
++++ b/flow_engine/generators/i2v.py
+@@ -2,6 +2,7 @@
+ 
+ import base64
++import json
+ import logging
+ import os
+ from ..config import CLIENT_CTX, ENDPOINTS, MODELS, VIDEO_INPUT_MODELS
+@@ -63,13 +64,22 @@ async def upload_image(
+     }
+ 
+     log.info("Uploading image: %s", os.path.basename(image_path))
+-    result = await bridge.api_request(ENDPOINTS["upload_image"], body)
++    # Uploading an asset is not a generation request. Requesting the default
++    # VIDEO_GENERATION captcha here can fail before the extension performs the
++    # Google fetch, leaving no upload entry and an unhelpful "Unknown" error.
++    result = await bridge.api_request(
++        ENDPOINTS["upload_image"], body, captcha_action=""
++    )
+ 
+     status = result.get("status", 0)
+     data = result.get("data", {})
+     if status != 200:
+-        err = data.get("error", {}).get("message", "Unknown") if isinstance(data, dict) else str(data)
++        err = result.get("error") if isinstance(result, dict) else None
++        if not err and isinstance(data, dict):
++            nested_error = data.get("error")
++            if isinstance(nested_error, dict):
++                err = nested_error.get("message") or nested_error.get("status")
++            elif nested_error:
++                err = str(nested_error)
++        if not err:
++            err = json.dumps(result, ensure_ascii=False, default=str)[:500]
+         err_msg = f"Image upload failed: {err}"
+         log.error("%s", err_msg)
+         raise ValueError(err_msg)
