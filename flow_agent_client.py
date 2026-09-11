@@ -211,17 +211,22 @@ class FlowAgentClient:
 
     def assert_ready(self, timeout_seconds: float = 15.0) -> dict[str, Any]:
         health = self.health(timeout_seconds=timeout_seconds)
+        uses_batch_transport = health.get("flow_transport") == "batchexecute"
         if (
             health.get("status") != "healthy"
             or health.get("extension_connected") is not True
-            or health.get("has_flow_key") is not True
+            or (
+                not uses_batch_transport
+                and health.get("has_flow_key") is not True
+            )
         ):
             raise FlowAgentHTTPError(
                 "Flow Agent is reachable but not ready: "
                 f"status={health.get('status')!r}, "
                 f"extension_connected={health.get('extension_connected')!r}, "
                 f"has_flow_key={health.get('has_flow_key')!r}, "
-                f"transport={health.get('transport')!r}."
+                f"transport={health.get('transport')!r}, "
+                f"flow_transport={health.get('flow_transport')!r}."
             )
         return health
 

@@ -218,7 +218,8 @@ Ejecuta `05-STATUS-FLOW.cmd`. Un estado correcto debe mostrar:
 - `Mode: local`
 - `status: healthy`
 - `extension_connected: True`
-- `has_flow_key: True`
+- `flow_transport: batchexecute`
+- `has_flow_key: False` puede ser normal con el transporte nuevo
 - `Windows local configuration: True`
 - `ngrok: not used in Local mode`
 
@@ -292,7 +293,8 @@ En Windows, ejecuta `05-STATUS-FLOW.cmd`. Un estado correcto debe mostrar:
 - `Mode: runpod`
 - `status: healthy`
 - `extension_connected: True`
-- `has_flow_key: True`
+- `flow_transport: batchexecute`
+- `has_flow_key: False` puede ser normal con el transporte nuevo
 - Una URL HTTPS en `ngrok:`
 
 Esto confirma la parte de Windows. También verifica que RunPod tenga esa misma URL en `FLOW_AGENT_BASE_URL`.

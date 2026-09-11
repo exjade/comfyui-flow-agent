@@ -1,0 +1,1084 @@
+diff --git a/flow-agent/flow_engine/bridge.py b/flow-agent/flow_engine/bridge.py
+index ecda475..6606f47 100644
+--- a/flow-agent/flow_engine/bridge.py
++++ b/flow-agent/flow_engine/bridge.py
+@@ -26,8 +26,10 @@ from .config import (
+     WS_PORT, HTTP_PORT, API_BASE, API_KEY,
+     CLIENT_CTX, USER_AGENTS, API_REQUEST_TIMEOUT,
+     MAX_CONCURRENT_REQUESTS, REQUEST_MIN_INTERVAL,
++    DEFAULT_PROJECT, USE_BATCH_RPC,
+ )
+ from .http_bridge import ExtensionHttpRegistry
++from . import flow_batch as fb
+ 
+ log = logging.getLogger("flow_engine.bridge")
+ 
+@@ -50,6 +52,8 @@ class ExtensionBridge:
+         self._connected = asyncio.Event()
+         self._loop = None
+         self._boot_time = _time.monotonic()  # for startup cooldown
++        self._batch_operation_projects: dict[str, str] = {}
++        self._batch_operation_media: dict[str, str] = {}
+ 
+         # Late/orphan-response reconciliation
+         self._req_meta: dict[str, dict] = {}
+@@ -407,6 +411,8 @@ class ExtensionBridge:
+ 
+     async def health_check(self):
+         """Quick check if at least one extension is ready with valid token."""
++        if USE_BATCH_RPC:
++            return self.is_extension_connected()
+         active_clients = [cid for cid in self._clients if self._tokens.get(cid)]
+         return bool(active_clients or (self.http_registry.has_online_session() and self.http_registry.get_flow_key()))
+ 
+@@ -447,8 +453,9 @@ class ExtensionBridge:
+             self._states[client_id] = "idle"
+             log.info("Extension client ready: %s (total: %d)", client_id, len(self._clients))
+ 
+-            # If client connects without a token, trigger an automatic flow tab refresh in the background
+-            if not data.get("flowKeyPresent"):
++            # The legacy transport needs a bearer token. Batchexecute is signed
++            # in the Flow page and deliberately has no flowKey.
++            if not USE_BATCH_RPC and not data.get("flowKeyPresent"):
+                 log.info("Client %s has no cached token. Triggering auto token refresh...", client_id)
+                 asyncio.create_task(self._request_flow_tab_for(client_id))
+             return client_id
+@@ -533,6 +540,16 @@ class ExtensionBridge:
+ 
+     async def request_media_url(self, media_id: str, client_id: str | None = None, timeout: float = 30) -> str | None:
+         """Ask the extension to resolve Google's short-lived signed media URL."""
++        if USE_BATCH_RPC:
++            actual_id = self._batch_operation_media.get(media_id, media_id)
++            result = await self._batch_payload(
++                fb.RPC_MEDIA, fb.media_request(actual_id), client_id=client_id,
++                timeout=max(timeout, 60),
++            )
++            if isinstance(result, dict) and result.get("error"):
++                return None
++            urls = fb.read_media_urls(result, actual_id)
++            return urls.video or urls.image
+         client_id = client_id or target_client_id_var.get() or self._select_client()
+         if not client_id:
+             return None
+@@ -591,6 +608,10 @@ class ExtensionBridge:
+ 
+     async def api_request(self, url_path, body, captcha_action="VIDEO_GENERATION", method="POST", timeout=None, meta=None, client_id=None):
+         """Send API request through a selected Chrome extension."""
++        if USE_BATCH_RPC:
++            return await self._batch_api_request(
++                url_path, body, captcha_action, method, timeout, meta, client_id
++            )
+         if not client_id:
+             client_id = target_client_id_var.get() or self._select_client()
+         if not client_id:
+@@ -620,6 +641,220 @@ class ExtensionBridge:
+                     result = retry_res
+         return result
+ 
++    async def _batch_rpc(self, rpcid, freq, captcha_action="", *, match=None,
++                         timeout=None, meta=None, client_id=None):
++        """Run one RPC inside the signed-in Flow page through the extension."""
++        client_id = client_id or target_client_id_var.get() or self._select_client()
++        if not client_id:
++            return {"error": "No extensions connected", "status": 503}
++        if captcha_action:
++            await self._wait_startup_cooldown()
++            await self._space_out_global_requests()
++        req_id = str(uuid.uuid4())
++        future = self._loop.create_future()
++        self._pending[req_id] = future
++        self._remember_request(req_id, {
++            "captcha_action": captcha_action,
++            "url_path": f"batchexecute:{rpcid}",
++            "client_id": client_id,
++            **(meta or {}),
++        })
++        params = {"rpcid": rpcid, "freq": freq}
++        if captcha_action:
++            params["captchaAction"] = captcha_action
++        if match:
++            params["match"] = match
++        self._states[client_id] = "running"
++        sent = await self.send_message_to(client_id, {
++            "id": req_id, "method": "batch_rpc", "params": params,
++        })
++        if not sent:
++            self._pending.pop(req_id, None)
++            return {"error": "Extension command could not be delivered", "status": 503}
++        try:
++            result = await asyncio.wait_for(
++                future, timeout=timeout or (300 if captcha_action else API_REQUEST_TIMEOUT)
++            )
++            if isinstance(result, dict):
++                result["_client_id"] = client_id
++            return result
++        except asyncio.TimeoutError:
++            return {"error": "TIMEOUT", "status": 504, "_client_id": client_id}
++        finally:
++            self._pending.pop(req_id, None)
++            if client_id in self._states:
++                self._states[client_id] = "idle"
++
++    async def _batch_payload(self, rpcid, freq, captcha_action="", **kwargs):
++        result = await self._batch_rpc(
++            rpcid, freq, captcha_action, **kwargs
++        )
++        if not isinstance(result, dict) or result.get("error"):
++            return result if isinstance(result, dict) else {"error": str(result)}
++        try:
++            return fb.first_payload(result.get("data") or "", rpcid)
++        except Exception as exc:
++            return {"error": str(exc), "status": 502,
++                    "raw": (result.get("data") or "")[:500]}
++
++    @staticmethod
++    def _batch_project_id(url_path, body):
++        contexts = []
++        if isinstance(body, dict):
++            contexts.append(body.get("clientContext"))
++            contexts.extend(
++                item.get("clientContext") for item in (body.get("requests") or [])
++                if isinstance(item, dict)
++            )
++        for context in contexts:
++            if isinstance(context, dict) and context.get("projectId"):
++                return str(context["projectId"])
++        match = __import__("re").search(r"/projects/([^/]+)/", str(url_path))
++        return match.group(1) if match else DEFAULT_PROJECT
++
++    @staticmethod
++    def _batch_error(error, status=502):
++        if isinstance(error, dict):
++            return error
++        return {"status": status, "error": str(error),
++                "data": {"error": {"message": str(error)}}}
++
++    async def _batch_api_request(self, url_path, body, captcha_action, method,
++                                 timeout, meta, client_id):
++        """Translate the public legacy bridge contract onto batchexecute."""
++        project_id = self._batch_project_id(url_path, body)
++        try:
++            if str(url_path).endswith("flowMedia:batchGenerateImages"):
++                freq = fb.image_request_from_legacy(body, project_id)
++                payload = await self._batch_payload(
++                    fb.RPC_GEN_IMAGE, freq, fb.CAPTCHA_IMAGE,
++                    timeout=timeout or 300, meta=meta, client_id=client_id,
++                )
++                if isinstance(payload, dict) and payload.get("error"):
++                    return self._batch_error(payload)
++                images = fb.read_images(payload)
++                if not images:
++                    return self._batch_error("Image generation returned no media URL")
++                return {"status": 200, "data": {"media": [
++                    {"name": item["media_id"], "image": {"generatedImage": {
++                        "fifeUrl": item["image_url"], "imageUri": item["image_url"]
++                    }}} for item in images
++                ]}}
++
++            if url_path in ("/v1/flow/uploadImage", "/v1:uploadImage"):
++                image_b64 = body.get("imageBytes") if isinstance(body, dict) else None
++                if not image_b64:
++                    return self._batch_error("Image upload contains no imageBytes", 400)
++                freq = fb.upload_image_request(image_b64, project_id)
++                payload = await self._batch_payload(
++                    fb.RPC_UPLOAD_IMAGE, freq, fb.CAPTCHA_IMAGE,
++                    timeout=timeout or 120, meta=meta, client_id=client_id,
++                )
++                if isinstance(payload, dict) and payload.get("error"):
++                    return self._batch_error(payload)
++                media_id = fb.read_uploaded_media_id(payload)
++                return {"status": 200, "data": {"mediaId": media_id,
++                        "name": media_id, "media": {"name": media_id}}}
++
++            if url_path == "/v1/video:batchAsyncGenerateVideoStartImage":
++                operations = []
++                for item in body.get("requests") or []:
++                    freq = fb.video_i2v_request_from_legacy(item, project_id)
++                    payload = await self._batch_payload(
++                        fb.RPC_GEN_VIDEO_I2V, freq, fb.CAPTCHA_VIDEO,
++                        timeout=timeout or 120, meta=meta, client_id=client_id,
++                    )
++                    if isinstance(payload, dict) and payload.get("error"):
++                        return self._batch_error(payload)
++                    operation = fb.read_operation(payload)
++                    self._batch_operation_projects[operation.operation_id] = project_id
++                    operations.append({"name": operation.operation_id})
++                return {"status": 200, "data": {"media": operations}}
++
++            if url_path == "/v1/video:batchCheckAsyncVideoGenerationStatus":
++                media = []
++                for item in body.get("media") or []:
++                    operation_id = item.get("name", "")
++                    resolved = await self._batch_poll_operation(
++                        operation_id, item.get("projectId") or project_id,
++                        client_id=client_id,
++                    )
++                    media.append(resolved)
++                return {"status": 200, "data": {"media": media}}
++
++            if str(url_path).startswith("/v1/media/"):
++                requested = str(url_path).rsplit("/", 1)[-1]
++                actual_id = self._batch_operation_media.get(requested, requested)
++                payload = await self._batch_payload(
++                    fb.RPC_MEDIA, fb.media_request(actual_id),
++                    timeout=timeout or 60, client_id=client_id,
++                )
++                if isinstance(payload, dict) and payload.get("error"):
++                    return self._batch_error(payload)
++                urls = fb.read_media_urls(payload, actual_id)
++                data = {"name": actual_id}
++                if urls.video:
++                    data["video"] = {"fifeUrl": urls.video}
++                if urls.image:
++                    data["image"] = {"fifeUrl": urls.image}
++                return {"status": 200 if urls.video or urls.image else 404, "data": data}
++
++            if url_path == "/v1/credits":
++                return {"status": 200, "data": {
++                    "note": "Credits are not exposed by the batchexecute transport"
++                }}
++
++            unsupported = {
++                "/v1/video:batchAsyncGenerateVideoText": "text-to-video",
++                "/v1/video:batchAsyncGenerateVideoStartAndEndImage": "start/end video",
++                "/v1/video:batchAsyncGenerateVideoReferenceImages": "reference video",
++                "/v1/video:batchAsyncGenerateVideoEditVideo": "video editing",
++                "/v1/video:batchAsyncGenerateVideoUpsampleVideo": "video upscale",
++            }
++            if url_path in unsupported:
++                return self._batch_error(
++                    f"{unsupported[url_path]} is not yet mapped on Flow's new "
++                    "batchexecute transport; no paid request was submitted", 422
++                )
++            return self._batch_error(
++                f"Unsupported batchexecute translation for {url_path}", 422
++            )
++        except Exception as exc:
++            log.exception("Batch transport failed for %s", url_path)
++            return self._batch_error(exc)
++
++    async def _batch_poll_operation(self, operation_id, project_id, *, client_id=None):
++        if not operation_id:
++            return {"name": "", "mediaMetadata": {"mediaStatus": {
++                "mediaGenerationStatus": "MEDIA_GENERATION_STATUS_FAILED",
++                "error": {"message": "Missing operation id"},
++            }}}
++        actual_id = self._batch_operation_media.get(operation_id)
++        if not actual_id:
++            project_id = self._batch_operation_projects.get(operation_id, project_id)
++            listing = await self._batch_rpc(
++                fb.RPC_PROJECT_MEDIA, fb.project_media_request(project_id),
++                match=operation_id, timeout=120, client_id=client_id,
++            )
++            if not listing.get("error"):
++                text = listing.get("data") or ""
++                actual_id = fb.find_media_id_in_text(text, operation_id)
++                if actual_id:
++                    self._batch_operation_media[operation_id] = actual_id
++        video_url = None
++        if actual_id:
++            payload = await self._batch_payload(
++                fb.RPC_MEDIA, fb.media_request(actual_id), timeout=60,
++                client_id=client_id,
++            )
++            if not (isinstance(payload, dict) and payload.get("error")):
++                video_url = fb.read_media_urls(payload, actual_id).video
++        status = ("MEDIA_GENERATION_STATUS_SUCCESSFUL" if video_url else
++                  "MEDIA_GENERATION_STATUS_PENDING")
++        return {"name": operation_id, "mediaMetadata": {"mediaStatus": {
++            "mediaGenerationStatus": status,
++        }}}
++
+     @staticmethod
+     def _is_unauthenticated(result) -> bool:
+         """True if an extension response indicates a 401/expired-token error."""
+diff --git a/flow-agent/flow_engine/config.py b/flow-agent/flow_engine/config.py
+index 2a5e937..12e492b 100644
+--- a/flow-agent/flow_engine/config.py
++++ b/flow-agent/flow_engine/config.py
+@@ -73,6 +73,13 @@ LEGACY_MEDIA_STORE_FILE = os.path.join(OUTPUT_DIR, "media-ids.json")
+ 
+ DEFAULT_PROJECT = os.environ.get("DEFAULT_PROJECT", "0143adf4-5864-4cb4-abb5-fe4254ad0dc7")
+ 
++# Flow moved its active frontend from the bearer-authenticated REST API to
++# flow.google.com batchexecute. Keep the legacy path only as an explicit
++# diagnostic fallback for accounts that still receive a ya29 token.
++USE_BATCH_RPC = os.environ.get("USE_BATCH_RPC", "1").strip().lower() in {
++    "1", "true", "yes", "on",
++}
++
+ # Available image models:
+ # - harbor_seal (Nano Banana 2 Lite)
+ # - narwhal (Nano Banana)
+diff --git a/flow-agent/flow_engine/flow_batch.py b/flow-agent/flow_engine/flow_batch.py
+new file mode 100644
+index 0000000..4e478e5
+--- /dev/null
++++ b/flow-agent/flow_engine/flow_batch.py
+@@ -0,0 +1,336 @@
++"""Codec and request builders for Flow's flow.google.com batchexecute API.
++
++The current Flow frontend authenticates requests inside the signed-in page with
++cookies plus a per-page ``at`` value.  This module only builds and parses the
++wire format; the browser extension performs the network request.
++
++The wire shapes were independently verified against the migrated frontend and
++are intentionally isolated here because this is an undocumented private API.
++"""
++
++from __future__ import annotations
++
++import json
++import random
++import re
++import uuid
++from dataclasses import dataclass
++from typing import Any, Optional
++
++
++RPC_GEN_IMAGE = "ogiZ0b"
++RPC_GEN_VIDEO_I2V = "eb1hJf"
++RPC_OPERATION = "jwpduf"
++RPC_PROJECT_MEDIA = "Zzl0ze"
++RPC_MEDIA = "as29s"
++RPC_UPLOAD_IMAGE = "maseQ"
++
++CAPTCHA_IMAGE = "IMAGE_GENERATION"
++CAPTCHA_VIDEO = "VIDEO_GENERATION"
++CAPTCHA_SLOT = "__CAPTCHA__"
++MEDIA_HOST = "flow-content.google"
++
++SURFACE_ID = 22
++FULL_FRAME_CROP = [None, 0.0038759689922481244, 1, 0.9961240310077519]
++REF_TYPE_IMAGE = 1
++
++IMAGE_MODEL_ALIASES = {
++    "HARBOR_SEAL": "NARWHAL",
++    "NARWHAL": "NARWHAL",
++    "GEM_PIX_2": "GEM_PIX_2",
++}
++IMAGE_ASPECTS = {
++    "IMAGE_ASPECT_RATIO_SQUARE": 1,
++    "IMAGE_ASPECT_RATIO_PORTRAIT": 2,
++    "IMAGE_ASPECT_RATIO_LANDSCAPE": 3,
++    "IMAGE_ASPECT_RATIO_3_4": 4,
++    "IMAGE_ASPECT_RATIO_PORTRAIT_FOUR_THREE": 4,
++    "IMAGE_ASPECT_RATIO_4_3": 5,
++    "IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE": 5,
++}
++VIDEO_ASPECTS = {
++    "VIDEO_ASPECT_RATIO_PORTRAIT": 1,
++    "VIDEO_ASPECT_RATIO_LANDSCAPE": 2,
++}
++
++
++class FlowBatchError(RuntimeError):
++    """A batch request or response could not be translated safely."""
++
++
++@dataclass(frozen=True)
++class RpcResult:
++    rpcid: str
++    data: Any
++    error: Any = None
++
++
++@dataclass(frozen=True)
++class Operation:
++    operation_id: str
++    project_id: Optional[str]
++    status: Optional[str]
++    error: Optional[str] = None
++
++
++@dataclass(frozen=True)
++class MediaUrls:
++    media_id: str
++    video: Optional[str] = None
++    image: Optional[str] = None
++
++
++def _uuid() -> str:
++    return str(uuid.uuid4()).upper()
++
++
++def _context(project_id: str) -> list:
++    return [None, SURFACE_ID, None, None, None, project_id, None, None,
++            None, None, [CAPTCHA_SLOT, 1]]
++
++
++def build_envelope(rpcid: str, inner: Any) -> str:
++    return json.dumps(
++        [[[rpcid, json.dumps(inner, separators=(",", ":"), ensure_ascii=False),
++           None, "generic"]]],
++        separators=(",", ":"), ensure_ascii=False,
++    )
++
++
++def parse_envelope(text: str) -> list[RpcResult]:
++    if not text:
++        return []
++    body = text.split("\n", 1)[1] if text.startswith(")]}'") else text
++    decoder = json.JSONDecoder()
++    results = []
++    index = 0
++    while index < len(body):
++        start = body.find("[", index)
++        if start < 0:
++            break
++        try:
++            chunk, consumed = decoder.raw_decode(body[start:])
++        except json.JSONDecodeError:
++            index = start + 1
++            continue
++        index = start + consumed
++        for entry in chunk if isinstance(chunk, list) else []:
++            if not isinstance(entry, list) or not entry or entry[0] != "wrb.fr":
++                continue
++            rpcid = entry[1] if len(entry) > 1 else "?"
++            payload = entry[2] if len(entry) > 2 else None
++            if payload is None:
++                results.append(RpcResult(
++                    rpcid, None, entry[5] if len(entry) > 5 else True
++                ))
++                continue
++            try:
++                data = json.loads(payload) if isinstance(payload, str) else payload
++            except json.JSONDecodeError as exc:
++                raise FlowBatchError(f"{rpcid} returned invalid JSON: {exc}") from exc
++            results.append(RpcResult(rpcid, data))
++    return results
++
++
++def first_payload(text: str, rpcid: str) -> Any:
++    results = parse_envelope(text)
++    for result in results:
++        if result.rpcid != rpcid:
++            continue
++        if result.error is not None:
++            raise FlowBatchError(f"{rpcid} failed: {result.error!r}")
++        return result.data
++    body = text.split("\n", 1)[1] if text.startswith(")]}'") else text
++    error_match = re.search(r'\["er"[^\]]*?,(\d{3})(?:,|\])', body)
++    if error_match:
++        raise FlowBatchError(
++            f"{rpcid} returned Google batch error code {error_match.group(1)}"
++        )
++    if '[["e",' in body or '["e",' in body:
++        raise FlowBatchError(f"{rpcid} returned a Google batch error frame")
++    raise FlowBatchError(
++        f"no {rpcid} envelope in response ({len(results)} other RPC records)"
++    )
++
++
++def _prompt(item: dict) -> str:
++    structured = item.get("structuredPrompt") or {}
++    parts = structured.get("parts") if isinstance(structured, dict) else None
++    if not isinstance(parts, list):
++        return ""
++    return " ".join(
++        str(part.get("text", "")) for part in parts if isinstance(part, dict)
++    ).strip()
++
++
++def _reference_ids(item: dict) -> list[str]:
++    refs = []
++    for value in item.get("imageInputs") or []:
++        if not isinstance(value, dict):
++            continue
++        media_id = value.get("name") or value.get("mediaId")
++        if media_id:
++            refs.append(str(media_id))
++    return refs
++
++
++def image_request_from_legacy(body: dict, project_id: str) -> str:
++    """Translate the existing REST image body without changing ComfyUI callers."""
++    old_items = body.get("requests") or []
++    if not old_items:
++        raise FlowBatchError("image request contains no items")
++    items = []
++    for index, old in enumerate(old_items):
++        if not isinstance(old, dict):
++            continue
++        aspect_name = old.get("imageAspectRatio", "IMAGE_ASPECT_RATIO_SQUARE")
++        if aspect_name not in IMAGE_ASPECTS:
++            raise FlowBatchError(f"unsupported image aspect {aspect_name!r}")
++        model = IMAGE_MODEL_ALIASES.get(old.get("imageModelName"), "NARWHAL")
++        seed = old.get("seed")
++        if not isinstance(seed, int):
++            seed = random.randint(1, 10**9) + index * 9973
++        refs = [[media_id, None, None, None, REF_TYPE_IMAGE]
++                for media_id in _reference_ids(old)] or None
++        items.append([
++            None, None, refs, seed, IMAGE_ASPECTS[aspect_name], model, None,
++            _context(project_id), [[[_prompt(old)]]], None, None, None,
++            _uuid(), _uuid(),
++        ])
++    if not items:
++        raise FlowBatchError("image request contains no valid items")
++    return build_envelope(
++        RPC_GEN_IMAGE, [None, items, 1, _context(project_id), [_uuid()]]
++    )
++
++
++def upload_image_request(image_b64: str, project_id: str,
++                         mime_type: str = "image/jpeg",
++                         file_name: str = "upload.jpg") -> str:
++    return build_envelope(RPC_UPLOAD_IMAGE, [
++        _context(project_id), image_b64, mime_type, 1, None, None, None, None,
++        file_name, None, _uuid(), _uuid(),
++    ])
++
++
++def _video_model(old: Optional[str]) -> str:
++    value = str(old or "")
++    if "ultra" in value:
++        return "veo_3_1_i2v_s_fast_ultra"
++    if "lite" in value and "low_priority" not in value:
++        return "veo_3_1_i2v_lite"
++    return "veo_3_1_i2v_lite_low_priority"
++
++
++def video_i2v_request_from_legacy(item: dict, project_id: str) -> str:
++    start = item.get("startImage") or {}
++    media_id = start.get("mediaId") if isinstance(start, dict) else None
++    if not media_id:
++        raise FlowBatchError("image-to-video request has no start image")
++    aspect_name = item.get("aspectRatio", "VIDEO_ASPECT_RATIO_LANDSCAPE")
++    if aspect_name not in VIDEO_ASPECTS:
++        raise FlowBatchError(f"unsupported video aspect {aspect_name!r}")
++    text_input = item.get("textInput") or {}
++    prompt = _prompt(text_input if isinstance(text_input, dict) else {})
++    inner = [
++        [[[None, None, [[[prompt]]]], _video_model(item.get("videoModelKey")),
++          VIDEO_ASPECTS[aspect_name], None,
++          [None, str(media_id), None, None, None, FULL_FRAME_CROP],
++          [None, None, None, None, _uuid(), _uuid()]]],
++        _context(project_id),
++        [_uuid(), 2],
++    ]
++    return build_envelope(RPC_GEN_VIDEO_I2V, inner)
++
++
++def operation_request(operation_id: str) -> str:
++    return build_envelope(RPC_OPERATION, [None, None, [[operation_id]]])
++
++
++def project_media_request(project_id: str) -> str:
++    return build_envelope(
++        RPC_PROJECT_MEDIA, [f"projects/{project_id}", None, None, None, [1]]
++    )
++
++
++def media_request(media_id: str) -> str:
++    return build_envelope(RPC_MEDIA, [media_id])
++
++
++def _walk_strings(node: Any):
++    if isinstance(node, str):
++        yield node
++    elif isinstance(node, list):
++        for item in node:
++            yield from _walk_strings(item)
++
++
++def _walk_lists(node: Any):
++    if isinstance(node, list):
++        yield node
++        for item in node:
++            yield from _walk_lists(item)
++
++
++def read_images(payload: Any) -> list[dict]:
++    images = []
++    seen = set()
++    for value in _walk_strings(payload):
++        if MEDIA_HOST + "/image/" not in value:
++            continue
++        media_id = value.split("/image/", 1)[1].split("?", 1)[0]
++        if media_id in seen:
++            continue
++        seen.add(media_id)
++        images.append({"media_id": media_id, "image_url": value})
++    return images
++
++
++def read_uploaded_media_id(payload: Any) -> str:
++    record = payload[0] if isinstance(payload, list) and payload else None
++    media_id = record[0] if isinstance(record, list) and record else None
++    if not isinstance(media_id, str) or not media_id:
++        raise FlowBatchError("upload response carried no media id")
++    return media_id
++
++
++def read_operation(payload: Any) -> Operation:
++    records = payload[2] if isinstance(payload, list) and len(payload) > 2 else None
++    record = records[0] if isinstance(records, list) and records else None
++    if not isinstance(record, list) or not record:
++        raise FlowBatchError("operation payload carried no record")
++    status = record[3] if len(record) > 3 else None
++    return Operation(str(record[0]), record[1] if len(record) > 1 else None, status)
++
++
++_MEDIA_SLOT = re.compile(r'null,null,\\?"([0-9a-fA-F-]{36})\\?"')
++
++
++def find_media_id_in_text(text: str, operation_id: str) -> Optional[str]:
++    start = text.find(operation_id)
++    if start < 0:
++        return None
++    match = _MEDIA_SLOT.search(text, start, start + 800)
++    return match.group(1) if match else None
++
++
++def find_media_id(payload: Any, operation_id: str) -> Optional[str]:
++    for node in _walk_lists(payload):
++        if len(node) < 4 or node[0] != operation_id:
++            continue
++        detail = node[3]
++        if isinstance(detail, list) and len(detail) > 4 and isinstance(detail[4], str):
++            return detail[4]
++    return None
++
++
++def read_media_urls(payload: Any, media_id: str) -> MediaUrls:
++    video = image = None
++    for value in _walk_strings(payload):
++        if not value.startswith("https://"):
++            continue
++        if MEDIA_HOST + "/video/" in value and video is None:
++            video = value
++        elif MEDIA_HOST + "/image/" in value and image is None:
++            image = value
++    return MediaUrls(media_id=media_id, video=video, image=image)
+diff --git a/flow-agent/flow_server/routes/system.py b/flow-agent/flow_server/routes/system.py
+index 6a76516..cc94a53 100644
+--- a/flow-agent/flow_server/routes/system.py
++++ b/flow-agent/flow_server/routes/system.py
+@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Depends, Header, WebSocket, Reques
+ from fastapi.responses import JSONResponse
+ 
+ from flow_server import state
++from flow_engine.config import USE_BATCH_RPC
+ from flow_server.state import verify_api_key, get_active_bridge
+ 
+ # Setup logging (format configured centrally in flow_engine/__init__.py, imported above)
+@@ -207,4 +208,5 @@ async def health():
+         "extension_connected": bridge.is_extension_connected(),
+         "has_flow_key": bridge.has_flow_key(),
+         "transport": bridge.active_transport(),
++        "flow_transport": "batchexecute" if USE_BATCH_RPC else "legacy_rest",
+     }
+diff --git a/flow-agent/main.py b/flow-agent/main.py
+index f0d1a7d..33e4011 100644
+--- a/flow-agent/main.py
++++ b/flow-agent/main.py
+@@ -153,10 +153,14 @@ def _ensure_backend():
+ 
+ 
+ def _wait_for_generation_ready(timeout=None):
+-    """Wait for both the extension socket and captured Flow key."""
++    """Wait for a usable browser session on the selected Flow transport."""
+ 
+     health = _ensure_backend()
+-    if health.get("extension_connected") is True and health.get("has_flow_key") is True:
++    ready = health.get("extension_connected") is True and (
++        health.get("flow_transport") == "batchexecute"
++        or health.get("has_flow_key") is True
++    )
++    if ready:
+         return health
+ 
+     if timeout is None:
+@@ -165,7 +169,11 @@ def _wait_for_generation_ready(timeout=None):
+     while time.monotonic() < deadline:
+         time.sleep(0.5)
+         health = _probe_backend(timeout=2) or {}
+-        if health.get("extension_connected") is True and health.get("has_flow_key") is True:
++        ready = health.get("extension_connected") is True and (
++            health.get("flow_transport") == "batchexecute"
++            or health.get("has_flow_key") is True
++        )
++        if ready:
+             return health
+ 
+     extension = bool(health.get("extension_connected"))
+@@ -173,7 +181,7 @@ def _wait_for_generation_ready(timeout=None):
+     _fail(
+         "backend is running but Google Flow is not ready "
+         f"(extension_connected={extension}, has_flow_key={flow_key}). "
+-        "Open Google Flow in Chrome, enable the Flow Agent extension, refresh the tab, "
++        "Open Google Flow in Chrome, enable the Flow Agent extension, refresh the page session, "
+         "and retry.",
+         EXIT_NOT_READY,
+     )
+diff --git a/flow-agent/tests/test_flow_batch.py b/flow-agent/tests/test_flow_batch.py
+new file mode 100644
+index 0000000..405149b
+--- /dev/null
++++ b/flow-agent/tests/test_flow_batch.py
+@@ -0,0 +1,87 @@
++import json
++
++import pytest
++
++from flow_engine import flow_batch as fb
++
++
++PROJECT = "88d1a5dc-0856-4576-917a-6215de3c4fd9"
++
++
++def _inner(freq):
++    outer = json.loads(freq)
++    return outer[0][0][0], json.loads(outer[0][0][1])
++
++
++def test_image_translation_preserves_prompt_seed_model_aspect_and_captcha():
++    freq = fb.image_request_from_legacy({"requests": [{
++        "structuredPrompt": {"parts": [{"text": "portrait test"}]},
++        "imageAspectRatio": "IMAGE_ASPECT_RATIO_PORTRAIT",
++        "imageModelName": "GEM_PIX_2",
++        "seed": 43,
++    }]}, PROJECT)
++
++    rpcid, inner = _inner(freq)
++    item = inner[1][0]
++    assert rpcid == fb.RPC_GEN_IMAGE
++    assert item[3] == 43
++    assert item[4] == 2
++    assert item[5] == "GEM_PIX_2"
++    assert item[8] == [[["portrait test"]]]
++    assert fb.CAPTCHA_SLOT in freq
++
++
++def test_image_translation_preserves_reference_media_ids():
++    media_id = "11111111-2222-3333-4444-555555555555"
++    freq = fb.image_request_from_legacy({"requests": [{
++        "structuredPrompt": {"parts": [{"text": "same character"}]},
++        "imageAspectRatio": "IMAGE_ASPECT_RATIO_SQUARE",
++        "imageInputs": [{"name": media_id}],
++    }]}, PROJECT)
++
++    _, inner = _inner(freq)
++    assert inner[1][0][2] == [[media_id, None, None, None, 1]]
++
++
++def test_i2v_translation_requires_and_embeds_start_image():
++    media_id = "11111111-2222-3333-4444-555555555555"
++    freq = fb.video_i2v_request_from_legacy({
++        "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
++        "textInput": {"structuredPrompt": {"parts": [{"text": "move slowly"}]}},
++        "videoModelKey": "veo_3_1_i2v_s_fast_ultra",
++        "startImage": {"mediaId": media_id},
++    }, PROJECT)
++    rpcid, inner = _inner(freq)
++    assert rpcid == fb.RPC_GEN_VIDEO_I2V
++    assert media_id in json.dumps(inner)
++    assert "move slowly" in json.dumps(inner)
++
++    with pytest.raises(fb.FlowBatchError, match="no start image"):
++        fb.video_i2v_request_from_legacy({}, PROJECT)
++
++
++def test_parse_envelope_ignores_transport_frames_and_reads_rpc_payload():
++    payload = [None, [["ok"]]]
++    frame = [["wrb.fr", fb.RPC_GEN_IMAGE, json.dumps(payload), None, None, None,
++              "generic"]]
++    text = ")]}'\n103 [[\"di\",15]]\n" + json.dumps(frame)
++    assert fb.first_payload(text, fb.RPC_GEN_IMAGE) == payload
++
++
++def test_outer_http_200_with_only_error_frame_is_not_success():
++    text = ")]}'\n103 [[\"er\",null,null,null,null,405,null,null,null,9]]\n"
++    with pytest.raises(fb.FlowBatchError, match="batch error code 405"):
++        fb.first_payload(text, fb.RPC_GEN_IMAGE)
++
++
++def test_signed_image_and_video_urls_are_read_by_shape():
++    image_id = "11111111-2222-3333-4444-555555555555"
++    video_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
++    image_url = f"https://flow-content.google/image/{image_id}?sig=x"
++    video_url = f"https://flow-content.google/video/{video_id}?sig=y"
++    assert fb.read_images([[image_url]]) == [{
++        "media_id": image_id, "image_url": image_url,
++    }]
++    urls = fb.read_media_urls([[image_url], [video_url]], video_id)
++    assert urls.image == image_url
++    assert urls.video == video_url
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+index 47513da..d20ff8f 100644
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -357,6 +357,7 @@ async function connectToAgent() {
+       type: 'extension_ready',
+       clientId: clientId,
+       flowKeyPresent: !!flowKey,
++      batchTransport: true,
+       tokenAge: flowKey && metrics.tokenCapturedAt ? Date.now() - metrics.tokenCapturedAt : null,
+     }));
+     if (flowKey) {
+@@ -374,7 +375,9 @@ async function connectToAgent() {
+     try {
+       const msg = JSON.parse(data);
+ 
+-      if (msg.method === 'api_request') {
++      if (msg.method === 'batch_rpc') {
++        await handleBatchRpc(msg);
++      } else if (msg.method === 'api_request') {
+         await handleApiRequest(msg);
+       } else if (msg.method === 'get_media_url') {
+         await handleGetMediaUrl(msg);
+@@ -390,6 +393,7 @@ async function connectToAgent() {
+           result: {
+             state,
+             flowKeyPresent: !!flowKey,
++            batchTransport: true,
+             manualDisconnect,
+             tokenAge: metrics.tokenCapturedAt ? Date.now() - metrics.tokenCapturedAt : null,
+             metrics,
+@@ -750,6 +754,175 @@ async function handleSolveCaptcha(msg) {
+   sendToAgent({ id, result });
+ }
+ 
++// ─── Flow batchexecute transport ────────────────────────────
++// The migrated Flow frontend no longer emits a bearer token. Its private RPCs
++// must be issued in the signed-in page so cookies and WIZ_global_data are used.
++const BATCH_CAPTCHA_SLOT = '__CAPTCHA__';
++const MAX_BATCH_TEXT = 2000000;
++
++async function runBatchRpc(command) {
++  const tab = await getOrOpenFlowTab();
++  if (!tab) return { error: 'NO_FLOW_TAB' };
++
++  let freq = command.freq;
++  if (command.captchaAction) {
++    const solved = await solveCaptcha(command.id, command.captchaAction);
++    if (!solved?.token) {
++      return { error: `CAPTCHA_FAILED: ${solved?.error || 'no token'}` };
++    }
++    freq = freq.split(BATCH_CAPTCHA_SLOT).join(solved.token);
++  }
++
++  const [injected] = await chrome.scripting.executeScript({
++    target: { tabId: tab.id },
++    world: 'MAIN',
++    args: [command.id, command.rpcid, freq, MAX_BATCH_TEXT, command.match || null],
++    func: async (resultKey, rpcid, freqString, maxText, match) => {
++      const wiz = globalThis.WIZ_global_data || {};
++      const at = wiz.SNlM0e;
++      const sid = wiz.FdrFJe;
++      const bl = wiz.cfb2h;
++      if (!at) return { error: 'NO_AT_TOKEN' };
++      const reqid = Math.floor(Math.random() * 900000) + 100000;
++      const url =
++        `/_/AiSandboxAngularFrontend/data/batchexecute?rpcids=${encodeURIComponent(rpcid)}` +
++        `&f.sid=${encodeURIComponent(sid || '')}&bl=${encodeURIComponent(bl || '')}` +
++        `&hl=es-419&_reqid=${reqid}&rt=c`;
++      const response = await fetch(url, {
++        method: 'POST',
++        credentials: 'include',
++        headers: {
++          'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
++          'x-same-domain': '1',
++        },
++        body: new URLSearchParams({ 'f.req': freqString, at }),
++      });
++      const text = await response.text();
++      const resultCache = globalThis.__FLOW_AGENT_BATCH_RESULTS ||= {};
++      if (match) {
++        const found = text.indexOf(match);
++        const result = {
++          status: response.status,
++          matched: found !== -1,
++          text: found === -1 ? '' : text.slice(found, found + 800),
++          responseLength: text.length,
++        };
++        resultCache[resultKey] = result;
++        setTimeout(() => delete resultCache[resultKey], 120000);
++        return result;
++      }
++      // Keep only the requested RPC envelope and Google error frames. Large
++      // responses can exceed Chromium's executeScript serialization limit.
++      const selected = [];
++      let matchedRpc = false;
++      let googleError = null;
++      for (const line of text.split('\n')) {
++        const candidate = line.trim();
++        if (!candidate.startsWith('[')) continue;
++        try {
++          const chunk = JSON.parse(candidate);
++          for (const entry of Array.isArray(chunk) ? chunk : []) {
++            if (!Array.isArray(entry)) continue;
++            if (entry[0] === 'wrb.fr' && entry[1] === rpcid) {
++              matchedRpc = true;
++              selected.push(entry);
++            } else if (entry[0] === 'er' || entry[0] === 'e') {
++              googleError ||= entry;
++              selected.push(entry);
++            }
++          }
++        } catch { /* sentinel or length line */ }
++      }
++      const compact = selected.length ? JSON.stringify(selected) : text.slice(0, maxText);
++      const result = {
++        status: response.status,
++        text: compact.slice(0, maxText),
++        responseLength: text.length,
++        compacted: selected.length > 0,
++      };
++      if (!matchedRpc && googleError) {
++        const code = googleError[0] === 'er' ? googleError[5] : googleError[1];
++        result.error = `GOOGLE_BATCH_ERROR: rpc=${rpcid}, frame=${googleError[0]}, code=${code ?? 'unknown'}`;
++      }
++      resultCache[resultKey] = result;
++      setTimeout(() => delete resultCache[resultKey], 120000);
++      return result;
++    },
++  });
++  if (injected?.result) return injected.result;
++
++  // Recover the already completed response from the page. Never resubmit a
++  // generation just because Brave omitted the first return value.
++  await sleep(100);
++  const [recovered] = await chrome.scripting.executeScript({
++    target: { tabId: tab.id },
++    world: 'MAIN',
++    args: [command.id],
++    func: (resultKey) => {
++      const cache = globalThis.__FLOW_AGENT_BATCH_RESULTS || {};
++      const result = cache[resultKey] || null;
++      delete cache[resultKey];
++      return result;
++    },
++  });
++  return recovered?.result || {
++    error: `NO_INJECTION_RESULT: rpc=${command.rpcid}, tab=${tab.id}`,
++  };
++}
++
++async function handleBatchRpc(msg) {
++  const { id, params = {} } = msg;
++  const { rpcid, freq, captchaAction, match } = params;
++  if (!rpcid || !freq) {
++    sendToAgent({ id, status: 400, error: 'INVALID_BATCH_RPC' });
++    return;
++  }
++
++  setState('running');
++  const visible = !!captchaAction;
++  if (visible) {
++    metrics.requestCount++;
++    addRequestLog({
++      id, type: `RPC:${rpcid}`, time: new Date().toISOString(),
++      status: 'processing', error: null, outputUrl: null, url: rpcid,
++      payloadSummary: freq.slice(0, 200),
++    });
++  }
++  try {
++    const output = await runBatchRpc({ id, rpcid, freq, captchaAction, match });
++    if (output.error) {
++      if (visible) {
++        metrics.failedCount++;
++        metrics.lastError = output.error;
++        updateRequestLog(id, { status: 'failed', error: output.error });
++      }
++      sendToAgent({ id, status: 502, error: output.error });
++    } else {
++      if (visible) {
++        metrics.successCount++;
++        metrics.lastError = null;
++        updateRequestLog(id, {
++          status: output.status >= 400 ? 'failed' : 'success',
++          httpStatus: output.status,
++          responseSummary: (output.text || '').slice(0, 300),
++        });
++      }
++      sendToAgent({ id, status: output.status, data: output.text });
++    }
++  } catch (error) {
++    const message = error?.message || 'BATCH_RPC_FAILED';
++    if (visible) {
++      metrics.failedCount++;
++      metrics.lastError = message;
++      updateRequestLog(id, { status: 'failed', error: message });
++    }
++    sendToAgent({ id, status: 500, error: message });
++  } finally {
++    chrome.storage.local.set({ metrics });
++    setState('idle');
++  }
++}
++
+ // ─── API Request Proxy ──────────────────────────────────────
+ 
+ async function handleTrpcRequest(msg) {
+@@ -1022,6 +1195,7 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
+       httpConnected,
+       transport: httpConnected ? 'http' : (ws?.readyState === WebSocket.OPEN ? 'ws' : 'none'),
+       flowKeyPresent: !!flowKey,
++      batchTransport: true,
+       manualDisconnect,
+       tokenAge: metrics.tokenCapturedAt ? Date.now() - metrics.tokenCapturedAt : null,
+       metrics: {
+@@ -1138,11 +1312,13 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
+   }
+ 
+   if (msg.type === 'REFRESH_TOKEN') {
+-    captureTokenFromFlowTab()
+-      .then((captured) => reply(captured
+-        ? { ok: true }
+-        : { error: 'No authenticated Flow request was observed after refreshing the page.' }
+-      ))
++    getOrOpenFlowTab()
++      .then(async (tab) => {
++        if (!tab) throw new Error('Flow page could not be opened.');
++        await chrome.tabs.reload(tab.id);
++        await waitForTabComplete(tab.id);
++        reply({ ok: true, batchTransport: true });
++      })
+       .catch((e) => reply({ error: e.message }));
+     return true;
+   }
+diff --git a/flow-extension/popup.html b/flow-extension/popup.html
+index 8062a68..6482000 100644
+--- a/flow-extension/popup.html
++++ b/flow-extension/popup.html
+@@ -539,7 +539,7 @@
+   </section>
+   </main>
+ 
+-  <div class="monitor-actions"><button class="primary" id="open-flow">Open Flow</button><button id="refresh-token">Refresh Token</button></div>
++  <div class="monitor-actions"><button class="primary" id="open-flow">Open Flow</button><button id="refresh-token">Refresh Session</button></div>
+   <div id="toast" role="status" aria-live="polite"></div>
+ 
+   <script src="config.js"></script>
+diff --git a/flow-extension/popup.js b/flow-extension/popup.js
+index 5d3f6bd..81d5dd3 100644
+--- a/flow-extension/popup.js
++++ b/flow-extension/popup.js
+@@ -205,7 +205,9 @@ async function refreshMonitor() {
+     document.getElementById('metric-success').textContent = status.metrics?.successCount || 0;
+     document.getElementById('metric-failed').textContent = status.metrics?.failedCount || 0;
+     const age = status.tokenAge == null ? null : Math.round(status.tokenAge / 60000);
+-    document.getElementById('monitor-token').textContent = status.flowKeyPresent ? `Token ${age || 0}m` : 'No token';
++    document.getElementById('monitor-token').textContent = status.batchTransport
++      ? 'Flow page session'
++      : (status.flowKeyPresent ? `Token ${age || 0}m` : 'No token');
+     document.getElementById('monitor-client').textContent = (status.clientId || '—').replace(/^client-/, '');
+     // Credits cost a real backend round-trip, so only fetch them when the
+     // connection actually comes back up — not on every status tick.
+@@ -228,11 +230,11 @@ document.getElementById('refresh-token').addEventListener('click', async () => {
+   button.textContent = 'Refreshing…';
+   try {
+     await runtimeMessage({ type: 'REFRESH_TOKEN' });
+-    showToast('Flow token refreshed successfully');
++    showToast('Flow page session refreshed');
+   } catch (error) {
+     showToast(`Token refresh failed: ${error.message}`, 'error');
+   } finally {
+-    button.textContent = 'Refresh Token';
++    button.textContent = 'Refresh Session';
+     setTimeout(refreshMonitor, 500);
+   }
+ });

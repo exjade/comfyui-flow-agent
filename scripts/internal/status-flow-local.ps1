@@ -20,7 +20,10 @@ Write-Host "Mode: $Mode"
 Write-Host "Base URL: $BaseUrl"
 try {
     $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 5
-    $Health | Format-List status, extension_connected, has_flow_key, transport
+    $Health | Format-List status, extension_connected, has_flow_key, transport, flow_transport
+    if ($Health.flow_transport -eq "batchexecute" -and $Health.extension_connected -eq $true -and $Health.has_flow_key -eq $false) {
+        Write-Host "has_flow_key=False is normal: Flow now uses the signed-in page session." -ForegroundColor Green
+    }
 } catch {
     Write-Host "Flow Agent is not responding: $($_.Exception.Message)" -ForegroundColor Red
 }

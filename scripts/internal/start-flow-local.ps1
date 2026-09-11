@@ -63,6 +63,8 @@ $ExtensionPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-fl
 $ExtensionManifest = Join-Path $FlowAgentRepositoryDir "flow-extension\manifest.json"
 $ExtensionBackground = Join-Path $FlowAgentRepositoryDir "flow-extension\background.js"
 $ExtensionPopup = Join-Path $FlowAgentRepositoryDir "flow-extension\popup.js"
+$ExtensionContent = Join-Path $FlowAgentRepositoryDir "flow-extension\content.js"
+$ExtensionInjected = Join-Path $FlowAgentRepositoryDir "flow-extension\injected.js"
 $ExtensionPatchInstalled = $false
 if ((Test-Path -LiteralPath $ExtensionManifest) -and (Test-Path -LiteralPath $ExtensionBackground) -and (Test-Path -LiteralPath $ExtensionPopup)) {
     $ManifestSource = Get-Content -LiteralPath $ExtensionManifest -Raw
@@ -79,6 +81,57 @@ if (-not $ExtensionPatchInstalled) {
 }
 if (-not $PopupSource.Contains('item.filename ? `${base}/download/${encodeURIComponent(item.filename)}` : item.url')) {
     throw "Flow Agent extension media-library fix is not installed (flow-agent-extension-media-library.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+if (-not (
+    $BackgroundSource.Contains('await chrome.tabs.reload(tab.id);') -and
+    $BackgroundSource.Contains('url: FLOW_TAB_URLS,') -and
+    $BackgroundSource.Contains('chrome.tabs.create({ url: FLOW_URL, active: true });')
+)) {
+    throw "Flow Agent extension token-refresh fix is not installed (flow-agent-extension-token-refresh.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+if (-not ((Test-Path -LiteralPath $ExtensionContent) -and (Test-Path -LiteralPath $ExtensionInjected))) {
+    throw "Flow Agent extension page-token files are missing. Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd."
+}
+$ExtensionContentSource = Get-Content -LiteralPath $ExtensionContent -Raw
+$ExtensionInjectedSource = Get-Content -LiteralPath $ExtensionInjected -Raw
+if (-not (
+    $BackgroundSource.Contains("msg.type === 'FLOW_AUTH_TOKEN'") -and
+    $ExtensionContentSource.Contains("window.addEventListener('FLOW_AUTH_TOKEN'") -and
+    $ExtensionInjectedSource.Contains("new CustomEvent('FLOW_AUTH_TOKEN'")
+)) {
+    throw "Flow Agent extension page-token fix is not installed (flow-agent-extension-page-token.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+if ($BackgroundSource.Contains("'https://labs.google/fx/tools/flow*'") -or $BackgroundSource.Contains("'https://labs.google/fx/*/tools/flow*'")) {
+    throw "Flow Agent extension current-project fix is not installed (flow-agent-extension-current-project.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+if (-not (
+    $BackgroundSource.Contains('if (!/^Bearer\s+\S+/i.test(value)) return;') -and
+    $BackgroundSource.Contains("console.log('[Flow Agent] Reusing existing Flow tab');")
+)) {
+    throw "Flow Agent extension token-capture fix is not installed (flow-agent-extension-token-capture.patch). Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+$BatchMigrationPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-batchexecute-migration.patch"
+$BatchModule = Join-Path $FlowAgentDir "flow_engine\flow_batch.py"
+$BridgeModule = Join-Path $FlowAgentDir "flow_engine\bridge.py"
+if (
+    -not (Test-Path -LiteralPath $BatchMigrationPatchPath -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $BatchModule -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $BridgeModule -PathType Leaf) -or
+    -not (Get-Content -LiteralPath $BatchModule -Raw).Contains('RPC_GEN_IMAGE = "ogiZ0b"') -or
+    -not (Get-Content -LiteralPath $BridgeModule -Raw).Contains('async def _batch_api_request') -or
+    -not $BackgroundSource.Contains('async function handleBatchRpc')
+) {
+    throw "Flow Agent batchexecute migration is not installed. Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
+}
+$ExtensionSemanticLogPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-semantic-log.patch"
+if (
+    -not (Test-Path -LiteralPath $ExtensionSemanticLogPatchPath -PathType Leaf) -or
+    -not $BackgroundSource.Contains('function batchRpcSemanticError') -or
+    -not $BackgroundSource.Contains("typeof payload[0] === 'number'") -or
+    -not $BackgroundSource.Contains("msg.includes('message channel closed')") -or
+    -not $BackgroundSource.Contains('for (const waitMs of [100, 250, 500, 1000, 2000, 3000])')
+) {
+    throw "Flow Agent semantic request-log fix is not installed. Run scripts\06-STOP-FLOW.cmd, then scripts\01-INSTALL-FLOW.cmd, and reload the unpacked browser extension."
 }
 foreach ($PatchName in @(
     "flow-agent-media-reuse.patch",
@@ -315,19 +368,20 @@ if ($Health -and $PreviousBaseUrl -eq $BaseUrl -and $BackendAcceptsCurrentKey) {
     $FlowProcess = Start-Process -FilePath $UvCommand.Source -ArgumentList @("run", "python", "main.py") -WorkingDirectory $FlowAgentDir -WindowStyle Hidden -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog -PassThru
 }
 
-$ProjectUrl = "https://labs.google/fx/es-419/tools/flow/project/$ProjectId"
+$ProjectUrl = "https://flow.google.com/project/$ProjectId"
 Start-Process $ProjectUrl
 $Deadline = (Get-Date).AddSeconds(45)
 do {
     Start-Sleep -Milliseconds 750
     try { $Health = Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 3 } catch { $Health = $null }
-    $IsReady = ($Health -and $Health.status -eq "healthy" -and $Health.extension_connected -eq $true -and $Health.has_flow_key -eq $true)
+    $UsesBatchTransport = ($Health -and $Health.flow_transport -eq "batchexecute")
+    $IsReady = ($Health -and $Health.status -eq "healthy" -and $Health.extension_connected -eq $true -and ($UsesBatchTransport -or $Health.has_flow_key -eq $true))
 } while (-not $IsReady -and (Get-Date) -lt $Deadline)
 
 if (-not $Health) { throw "Flow Agent did not respond. Check $StderrLog" }
 if (-not $IsReady) {
     $LauncherName = if ($Mode -eq "Local") { "04.1-START-FLOW-LOCAL.cmd" } else { "04-START-FLOW-RUNPOD.cmd" }
-    throw "Flow Agent started, but the Chrome extension is not ready. Open the configured Flow project, confirm that the extension is ON, refresh its token, and run $LauncherName again."
+    throw "Flow Agent started, but the browser session is not ready. Open the configured Flow project, confirm that the extension is ON, refresh the page session, and run $LauncherName again."
 }
 
 $BaseUrl | Set-Clipboard

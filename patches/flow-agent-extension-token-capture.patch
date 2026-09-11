@@ -1,0 +1,24 @@
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -143,7 +143,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
+       (h) => h.name?.toLowerCase() === 'authorization',
+     );
+     const value = authHeader?.value || '';
+-    if (!value.startsWith('Bearer ya29.')) return;
++    if (!/^Bearer\s+\S+/i.test(value)) return;
+ 
+     const token = value.replace(/^Bearer\s+/i, '').trim();
+     if (!token) return;
+@@ -405,8 +405,9 @@ async function connectToAgent() {
+             url: FLOW_TAB_URLS,
+           });
+           if (tabs.length) {
+-            await chrome.tabs.reload(tabs[0].id);
+-            console.log('[Flow Agent] Refreshed existing Flow tab');
++            workTabId = tabs[0].id;
++            workTabCreatedByExtension = false;
++            console.log('[Flow Agent] Reusing existing Flow tab');
+           } else {
+             await chrome.tabs.create({ url: FLOW_URL, active: true });
+             console.log('[Flow Agent] Opened new Flow tab');

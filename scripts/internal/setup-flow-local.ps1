@@ -17,6 +17,12 @@ $BackendVideoIngredientPatchPath = Join-Path $RepositoryRoot "patches\flow-agent
 $BackendImageUploadPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-image-upload-bridge.patch"
 $ExtensionFlowDomainPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-flow-domain.patch"
 $ExtensionMediaLibraryPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-media-library.patch"
+$ExtensionTokenRefreshPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-token-refresh.patch"
+$ExtensionCurrentProjectPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-current-project.patch"
+$ExtensionTokenCapturePatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-token-capture.patch"
+$ExtensionPageTokenPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-page-token.patch"
+$BatchMigrationPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-batchexecute-migration.patch"
+$ExtensionSemanticLogPatchPath = Join-Path $RepositoryRoot "patches\flow-agent-extension-semantic-log.patch"
 $BackendPatches = @(
     @{ Path = $BackendPatchPath; Name = "media reuse fix" },
     @{ Path = $BackendVideoPatchPath; Name = "conditioned-video fix" },
@@ -60,8 +66,36 @@ function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
     $ExtensionManifest = Join-Path $ExtensionDir "manifest.json"
     $ExtensionBackground = Join-Path $ExtensionDir "background.js"
     $ExtensionPopup = Join-Path $ExtensionDir "popup.js"
+    $ExtensionContent = Join-Path $ExtensionDir "content.js"
+    $ExtensionInjected = Join-Path $ExtensionDir "injected.js"
     $GenerationModule = Join-Path $FlowAgentDir "flow_server\routes\generation.py"
     $ModelsModule = Join-Path $FlowAgentDir "flow_server\models.py"
+    $BatchModule = Join-Path $FlowAgentDir "flow_engine\flow_batch.py"
+    $BridgeModule = Join-Path $FlowAgentDir "flow_engine\bridge.py"
+    if (
+        $PatchLeaf -eq "flow-agent-batchexecute-migration.patch" -and
+        (Test-Path -LiteralPath $BatchModule) -and
+        (Test-Path -LiteralPath $BridgeModule) -and
+        (Test-Path -LiteralPath $ExtensionBackground)
+    ) {
+        $BatchSource = Get-Content -LiteralPath $BatchModule -Raw
+        $BridgeSource = Get-Content -LiteralPath $BridgeModule -Raw
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        return (
+            $BatchSource.Contains('RPC_GEN_IMAGE = "ogiZ0b"') -and
+            $BridgeSource.Contains('async def _batch_api_request') -and
+            $BackgroundSource.Contains('async function handleBatchRpc')
+        )
+    }
+    if ($PatchLeaf -eq "flow-agent-extension-semantic-log.patch" -and (Test-Path -LiteralPath $ExtensionBackground)) {
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        return (
+            $BackgroundSource.Contains('function batchRpcSemanticError') -and
+            $BackgroundSource.Contains("typeof payload[0] === 'number'") -and
+            $BackgroundSource.Contains("msg.includes('message channel closed')") -and
+            $BackgroundSource.Contains('for (const waitMs of [100, 250, 500, 1000, 2000, 3000])')
+        )
+    }
     if (
         $PatchLeaf -eq "flow-agent-video-reference.patch" -and
         (Test-Path -LiteralPath $I2VModule) -and
@@ -113,6 +147,43 @@ function Test-BackendPatchApplied([string]$GitExe, [string]$PatchPath) {
     if ($PatchLeaf -eq "flow-agent-extension-media-library.patch" -and (Test-Path -LiteralPath $ExtensionPopup)) {
         $PopupSource = Get-Content -LiteralPath $ExtensionPopup -Raw
         return $PopupSource.Contains('item.filename ? `${base}/download/${encodeURIComponent(item.filename)}` : item.url')
+    }
+    if ($PatchLeaf -eq "flow-agent-extension-token-refresh.patch" -and (Test-Path -LiteralPath $ExtensionBackground)) {
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        return (
+            $BackgroundSource.Contains('await chrome.tabs.reload(tab.id);') -and
+            $BackgroundSource.Contains('url: FLOW_TAB_URLS,') -and
+            $BackgroundSource.Contains('chrome.tabs.create({ url: FLOW_URL, active: true });')
+        )
+    }
+    if ($PatchLeaf -eq "flow-agent-extension-current-project.patch" -and (Test-Path -LiteralPath $ExtensionBackground)) {
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        return (
+            $BackgroundSource.Contains("const FLOW_TAB_URLS = [`r`n  'https://flow.google.com/*',`r`n];") -or
+            $BackgroundSource.Contains("const FLOW_TAB_URLS = [`n  'https://flow.google.com/*',`n];")
+        )
+    }
+    if ($PatchLeaf -eq "flow-agent-extension-token-capture.patch" -and (Test-Path -LiteralPath $ExtensionBackground)) {
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        return (
+            $BackgroundSource.Contains('if (!/^Bearer\s+\S+/i.test(value)) return;') -and
+            $BackgroundSource.Contains("console.log('[Flow Agent] Reusing existing Flow tab');")
+        )
+    }
+    if (
+        $PatchLeaf -eq "flow-agent-extension-page-token.patch" -and
+        (Test-Path -LiteralPath $ExtensionBackground) -and
+        (Test-Path -LiteralPath $ExtensionContent) -and
+        (Test-Path -LiteralPath $ExtensionInjected)
+    ) {
+        $BackgroundSource = Get-Content -LiteralPath $ExtensionBackground -Raw
+        $ContentSource = Get-Content -LiteralPath $ExtensionContent -Raw
+        $InjectedSource = Get-Content -LiteralPath $ExtensionInjected -Raw
+        return (
+            $BackgroundSource.Contains("msg.type === 'FLOW_AUTH_TOKEN'") -and
+            $ContentSource.Contains("window.addEventListener('FLOW_AUTH_TOKEN'") -and
+            $InjectedSource.Contains("new CustomEvent('FLOW_AUTH_TOKEN'")
+        )
     }
     # A non-zero reverse check is the normal signal that a new patch still
     # needs to be installed.  Do not let the script-wide Stop preference turn
@@ -173,6 +244,84 @@ function Apply-ExtensionMediaLibraryPatch([string]$GitExe) {
     & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionMediaLibraryPatchPath
     if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension media-library fix could not be installed." }
     Write-Host "Installed Flow Agent extension media-library fix." -ForegroundColor Green
+}
+
+function Apply-ExtensionTokenRefreshPatch([string]$GitExe) {
+    if (Test-BackendPatchApplied $GitExe $ExtensionTokenRefreshPatchPath) {
+        Write-Host "Flow Agent extension token-refresh fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionTokenRefreshPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension token-refresh fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionTokenRefreshPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension token-refresh fix could not be installed." }
+    Write-Host "Installed Flow Agent extension token-refresh fix." -ForegroundColor Green
+}
+
+function Apply-ExtensionCurrentProjectPatch([string]$GitExe) {
+    if (Test-BackendPatchApplied $GitExe $ExtensionCurrentProjectPatchPath) {
+        Write-Host "Flow Agent extension current-project fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionCurrentProjectPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension current-project fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionCurrentProjectPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension current-project fix could not be installed." }
+    Write-Host "Installed Flow Agent extension current-project fix." -ForegroundColor Green
+}
+
+function Apply-ExtensionTokenCapturePatch([string]$GitExe) {
+    if (Test-BackendPatchApplied $GitExe $ExtensionTokenCapturePatchPath) {
+        Write-Host "Flow Agent extension token-capture fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionTokenCapturePatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension token-capture fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionTokenCapturePatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension token-capture fix could not be installed." }
+    Write-Host "Installed Flow Agent extension token-capture fix." -ForegroundColor Green
+}
+
+function Apply-ExtensionPageTokenPatch([string]$GitExe) {
+    if (Test-BackendPatchApplied $GitExe $ExtensionPageTokenPatchPath) {
+        Write-Host "Flow Agent extension page-token fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionPageTokenPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension page-token fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionPageTokenPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent extension page-token fix could not be installed." }
+    Write-Host "Installed Flow Agent extension page-token fix." -ForegroundColor Green
+}
+
+function Apply-BatchMigrationPatch([string]$GitExe) {
+    if (-not (Test-Path -LiteralPath $BatchMigrationPatchPath -PathType Leaf)) {
+        throw "Required Flow batchexecute migration patch is missing: $BatchMigrationPatchPath"
+    }
+    if (Test-BackendPatchApplied $GitExe $BatchMigrationPatchPath) {
+        Write-Host "Flow Agent batchexecute migration is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $BatchMigrationPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent batchexecute migration is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $BatchMigrationPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent batchexecute migration could not be installed." }
+    Write-Host "Installed Flow Agent batchexecute migration." -ForegroundColor Green
+}
+
+function Apply-ExtensionSemanticLogPatch([string]$GitExe) {
+    if (-not (Test-Path -LiteralPath $ExtensionSemanticLogPatchPath -PathType Leaf)) {
+        throw "Required Flow semantic request-log patch is missing: $ExtensionSemanticLogPatchPath"
+    }
+    if (Test-BackendPatchApplied $GitExe $ExtensionSemanticLogPatchPath) {
+        Write-Host "Flow Agent semantic request-log fix is already installed." -ForegroundColor Green
+        return
+    }
+    & $GitExe -C $FlowRepoDir apply --recount --check --unidiff-zero $ExtensionSemanticLogPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent semantic request-log fix is incompatible with the installed Flow Agent revision." }
+    & $GitExe -C $FlowRepoDir apply --recount --unidiff-zero $ExtensionSemanticLogPatchPath
+    if ($LASTEXITCODE -ne 0) { throw "Flow Agent semantic request-log fix could not be installed." }
+    Write-Host "Installed Flow Agent semantic request-log fix." -ForegroundColor Green
 }
 
 function Install-WingetPackage(
@@ -308,6 +457,36 @@ if (-not $BrowserExe) {
 Write-Step "2/7 Downloading Flow Agent"
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
+    $ExtensionSemanticLogPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionSemanticLogPatchPath
+    if ($ExtensionSemanticLogPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionSemanticLogPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent semantic request-log fix could not be prepared for update." }
+    }
+    $BatchMigrationPatchWasApplied = Test-BackendPatchApplied $GitExe $BatchMigrationPatchPath
+    if ($BatchMigrationPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $BatchMigrationPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent batchexecute migration could not be prepared for update." }
+    }
+    $ExtensionPageTokenPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionPageTokenPatchPath
+    if ($ExtensionPageTokenPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionPageTokenPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent extension page-token fix could not be prepared for update." }
+    }
+    $ExtensionTokenCapturePatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionTokenCapturePatchPath
+    if ($ExtensionTokenCapturePatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionTokenCapturePatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent extension token-capture fix could not be prepared for update." }
+    }
+    $ExtensionCurrentProjectPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionCurrentProjectPatchPath
+    if ($ExtensionCurrentProjectPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionCurrentProjectPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent extension current-project fix could not be prepared for update." }
+    }
+    $ExtensionTokenPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionTokenRefreshPatchPath
+    if ($ExtensionTokenPatchWasApplied) {
+        & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionTokenRefreshPatchPath
+        if ($LASTEXITCODE -ne 0) { throw "The existing Flow Agent extension token-refresh fix could not be prepared for update." }
+    }
     $ExtensionMediaPatchWasApplied = Test-BackendPatchApplied $GitExe $ExtensionMediaLibraryPatchPath
     if ($ExtensionMediaPatchWasApplied) {
         & $GitExe -C $FlowRepoDir apply --recount --reverse --unidiff-zero $ExtensionMediaLibraryPatchPath
@@ -333,6 +512,12 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
         }
         if ($ExtensionPatchWasApplied) { Apply-ExtensionPatch $GitExe }
         if ($ExtensionMediaPatchWasApplied) { Apply-ExtensionMediaLibraryPatch $GitExe }
+        if ($ExtensionTokenPatchWasApplied) { Apply-ExtensionTokenRefreshPatch $GitExe }
+        if ($ExtensionCurrentProjectPatchWasApplied) { Apply-ExtensionCurrentProjectPatch $GitExe }
+        if ($ExtensionTokenCapturePatchWasApplied) { Apply-ExtensionTokenCapturePatch $GitExe }
+        if ($ExtensionPageTokenPatchWasApplied) { Apply-ExtensionPageTokenPatch $GitExe }
+        if ($BatchMigrationPatchWasApplied) { Apply-BatchMigrationPatch $GitExe }
+        if ($ExtensionSemanticLogPatchWasApplied) { Apply-ExtensionSemanticLogPatch $GitExe }
         throw "Flow Agent could not be updated."
     }
 } elseif (Test-Path -LiteralPath $FlowRepoDir) {
@@ -345,6 +530,12 @@ if (Test-Path -LiteralPath (Join-Path $FlowRepoDir ".git")) {
 Apply-BackendPatches $GitExe
 Apply-ExtensionPatch $GitExe
 Apply-ExtensionMediaLibraryPatch $GitExe
+Apply-ExtensionTokenRefreshPatch $GitExe
+Apply-ExtensionCurrentProjectPatch $GitExe
+Apply-ExtensionTokenCapturePatch $GitExe
+Apply-ExtensionPageTokenPatch $GitExe
+Apply-BatchMigrationPatch $GitExe
+Apply-ExtensionSemanticLogPatch $GitExe
 
 Write-Step "3/7 Preparing the isolated runtime and dependencies"
 Push-Location $FlowAgentDir
@@ -426,6 +617,7 @@ $Settings = [ordered]@{
     DEFAULT_PROJECT = $ProjectId
     MAX_CONCURRENT_REQUESTS = "5"
     REQUEST_MIN_INTERVAL = "3"
+    USE_BATCH_RPC = "1"
     MEDIA_ID_VALIDATION_TTL_SECONDS = "21600"
 }
 foreach ($Setting in $Settings.GetEnumerator()) {

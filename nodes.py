@@ -152,21 +152,33 @@ def _parse_reference_paths(value: str, *, maximum: int = MAX_REFERENCE_IMAGES) -
     return paths
 
 
-def _upload_image_batch(client, image, *, started, timeout_seconds, max_images=10):
+def _upload_image_batch(
+    client,
+    image,
+    *,
+    started,
+    timeout_seconds,
+    max_images=10,
+    upload_cache=None,
+):
     if image is None:
         return []
+    if upload_cache is None:
+        upload_cache = {}
     media_ids = []
     for index, data_uri in enumerate(
         tensor_batch_to_png_data_uris(image, max_images=max_images), start=1
     ):
-        media_ids.append(
-            client.upload_image(
+        media_id = upload_cache.get(data_uri)
+        if media_id is None:
+            media_id = client.upload_image(
                 data_uri,
                 timeout_seconds=_remaining(
                     started, timeout_seconds, f"uploading reference image {index}"
                 ),
             )
-        )
+            upload_cache[data_uri] = media_id
+        media_ids.append(media_id)
     return media_ids
 
 
@@ -220,6 +232,7 @@ def _upload_character_references(
         "shoes_reference": shoes_reference,
     }
     references: list[dict[str, Any]] = []
+    upload_cache: dict[str, str] = {}
     for role, field_name, instruction in CHARACTER_REFERENCE_ROLES:
         source = sources[field_name]
         if source is None:
@@ -235,6 +248,7 @@ def _upload_character_references(
             started=started,
             timeout_seconds=timeout_seconds,
             max_images=remaining_slots,
+            upload_cache=upload_cache,
         )
         for role_index, media_id in enumerate(uploaded_ids, start=1):
             references.append(
@@ -317,6 +331,14 @@ def _save_character_preview(
         "subfolder": os.path.join("flow_agent", relative_folder).replace("\\", "/"),
         "type": "output",
     }
+
+
+def _write_json_atomic(path: str, payload: dict[str, Any]) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary_path = f"{path}.tmp"
+    with open(temporary_path, "w", encoding="utf-8") as output_file:
+        json.dump(payload, output_file, ensure_ascii=False, indent=2)
+    os.replace(temporary_path, path)
 
 
 def _tensor_png_bytes(image) -> bytes:
@@ -626,6 +648,45 @@ class FlowCharacterCreator:
 
         records: list[dict[str, Any]] = []
         tensors, previews, media_ids, source_urls, saved_paths = [], [], [], [], []
+        manifest_folder = os.path.join(
+            _comfy_output_directory(), "characters", slugify(dataset_id, fallback="character")
+        )
+        manifest_path = os.path.join(manifest_folder, "manifest.json")
+        progress_manifest_path = os.path.join(manifest_folder, "manifest.partial.json")
+
+        def build_manifest(state: str, contact_sheet_path: str | None = None):
+            return {
+                "version": 1,
+                "state": state,
+                "dataset_id": dataset_id,
+                "shot_preset": shot_preset,
+                "requested_shots": len(shots),
+                "completed_shots": len(records),
+                "successful_shots": len(tensors),
+                "failed_shots": sum(
+                    record.get("status") == "failed" for record in records
+                ),
+                "subject_description": subject_description.strip(),
+                "model": model,
+                "aspect_ratio": aspect_ratio,
+                "requested_size": ASPECT_TO_SIZE[aspect_ratio],
+                "reference_media_id": reference_ids[0],
+                "reference_media_ids": reference_ids,
+                "references": references,
+                "contact_sheet_path": contact_sheet_path,
+                "source_urls": list(source_urls),
+                "saved_paths": list(saved_paths),
+                "shots": list(records),
+                "manifest_path": manifest_path,
+                "progress_manifest_path": progress_manifest_path,
+            }
+
+        def save_progress(state: str = "in_progress") -> dict[str, Any]:
+            manifest = build_manifest(state)
+            _write_json_atomic(progress_manifest_path, manifest)
+            return manifest
+
+        save_progress()
         for shot_number, shot in enumerate(shots, start=1):
             full_prompt = build_character_prompt(
                 shot.prompt_fragment,
@@ -694,18 +755,26 @@ class FlowCharacterCreator:
                 record.update({"status": "failed", "error": str(last_error)})
                 records.append(record)
                 if not continue_on_error:
+                    save_progress("failed")
                     raise FlowAgentError(
-                        f"Character shot {shot_number} ({shot.shot_id}) failed: {last_error}"
+                        f"Character shot {shot_number} ({shot.shot_id}) failed: {last_error}. "
+                        f"Recovery manifest: {progress_manifest_path}"
                     ) from last_error
+                save_progress()
                 continue
             records.append(record)
+            save_progress()
 
         if not tensors:
+            save_progress("failed")
             failures = "; ".join(
                 f"{record['shot_id']}: {record.get('error', 'unknown error')}"
                 for record in records[:3]
             )
-            raise FlowAgentError(f"Character Creator generated no images. {failures}")
+            raise FlowAgentError(
+                f"Character Creator generated no images. {failures}. "
+                f"Recovery manifest: {progress_manifest_path}"
+            )
 
         image_batch = stack_image_tensors(tensors)
         contact_sheet = make_contact_sheet(image_batch, columns=preview_columns)
@@ -714,34 +783,12 @@ class FlowCharacterCreator:
             dataset_id=dataset_id,
             filename_stem="000_contact_sheet",
         )
-        manifest = {
-            "version": 1,
-            "dataset_id": dataset_id,
-            "shot_preset": shot_preset,
-            "requested_shots": len(shots),
-            "successful_shots": len(tensors),
-            "failed_shots": len(shots) - len(tensors),
-            "subject_description": subject_description.strip(),
-            "model": model,
-            "aspect_ratio": aspect_ratio,
-            "requested_size": ASPECT_TO_SIZE[aspect_ratio],
-            "reference_media_id": reference_ids[0],
-            "reference_media_ids": reference_ids,
-            "references": references,
-            "contact_sheet_path": contact_path,
-            "source_urls": source_urls,
-            "shots": records,
-        }
-        manifest_folder = os.path.join(
-            _comfy_output_directory(), "characters", slugify(dataset_id, fallback="character")
-        )
-        os.makedirs(manifest_folder, exist_ok=True)
-        manifest_path = os.path.join(manifest_folder, "manifest.json")
-        manifest["manifest_path"] = manifest_path
-        temporary_manifest = f"{manifest_path}.tmp"
-        with open(temporary_manifest, "w", encoding="utf-8") as manifest_file:
-            json.dump(manifest, manifest_file, ensure_ascii=False, indent=2)
-        os.replace(temporary_manifest, manifest_path)
+        manifest = build_manifest("complete", contact_path)
+        _write_json_atomic(manifest_path, manifest)
+        try:
+            os.remove(progress_manifest_path)
+        except FileNotFoundError:
+            pass
         ui_summary = {
             "dataset_id": dataset_id,
             "requested_shots": len(shots),

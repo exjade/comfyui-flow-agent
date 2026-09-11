@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import io
 import sys
+import time
 import types
 from contextlib import nullcontext
 
@@ -71,6 +72,32 @@ def test_node_uploads_reference_generates_and_batches(monkeypatch):
     assert FakeClient.generation_args["exclude_media_ids"] == ["ref-1"]
     assert json.loads(media_ids) == ["generated-1", "generated-2"]
     assert len(json.loads(urls)) == 2
+
+
+def test_character_references_reuse_identical_upload(monkeypatch):
+    class UploadClient:
+        def __init__(self):
+            self.uploaded = []
+
+        def upload_image(self, data_uri, timeout_seconds):
+            del timeout_seconds
+            self.uploaded.append(data_uri)
+            return f"ref-{len(self.uploaded)}"
+
+    client = UploadClient()
+    shared = torch.zeros((1, 2, 2, 3))
+    references = nodes._upload_character_references(
+        client,
+        shared,
+        started=time.monotonic(),
+        timeout_seconds=600,
+        top_reference=shared,
+        bottom_reference=shared,
+    )
+
+    assert len(client.uploaded) == 1
+    assert [item["role"] for item in references] == ["character", "top", "bottom"]
+    assert [item["media_id"] for item in references] == ["ref-1", "ref-1", "ref-1"]
 
 
 def test_video_result_exposes_native_video_and_inline_preview(monkeypatch, tmp_path):
@@ -446,6 +473,79 @@ def test_character_creator_previews_every_result_and_builds_manifest(monkeypatch
         FakeCharacterClient.generation_calls[0]["idempotency_key"]
         != FakeCharacterClient.generation_calls[1]["idempotency_key"]
     )
+
+
+def test_character_creator_returns_confirmed_images_after_later_failure(monkeypatch, tmp_path):
+    class PartialCharacterClient(FakeCharacterClient):
+        generation_calls = []
+
+        def generate_images(self, **kwargs):
+            type(self).generation_calls.append(kwargs)
+            if len(type(self).generation_calls) == 2:
+                raise RuntimeError("Google rejected this shot")
+            return [{"url": "https://unit.invalid/kept.png", "media_id": "kept-1"}]
+
+        def download_generated_image(self, item, timeout_seconds):
+            return _png_bytes(80)
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", PartialCharacterClient)
+    monkeypatch.setattr(nodes, "_comfy_output_directory", lambda: str(tmp_path))
+
+    response = nodes.FlowCharacterCreator().generate_dataset(
+        reference_image=torch.zeros((1, 4, 4, 3)),
+        subject_description="A blue-haired singer",
+        shot_preset="all 22",
+        shot_count=2,
+        model="gem_pix_2",
+        seed=43,
+        retry_count=0,
+        continue_on_error=True,
+        timeout_per_image=600,
+        preview_columns=2,
+        dataset_name="Partial Character",
+    )
+
+    images, _, manifest_json, _, media_ids_json, paths_json = response["result"]
+    manifest = json.loads(manifest_json)
+    assert tuple(images.shape) == (1, 4, 4, 3)
+    assert manifest["state"] == "complete"
+    assert manifest["successful_shots"] == 1
+    assert manifest["failed_shots"] == 1
+    assert json.loads(media_ids_json) == ["kept-1"]
+    assert len(json.loads(paths_json)) == 1
+    assert not (tmp_path / "characters" / manifest["dataset_id"] / "manifest.partial.json").exists()
+
+
+def test_character_creator_writes_recovery_manifest_when_every_shot_fails(monkeypatch, tmp_path):
+    class FailedCharacterClient(FakeCharacterClient):
+        def generate_images(self, **kwargs):
+            raise RuntimeError("No generated media")
+
+    monkeypatch.setattr(nodes, "FlowAgentClient", FailedCharacterClient)
+    monkeypatch.setattr(nodes, "_comfy_output_directory", lambda: str(tmp_path))
+
+    with pytest.raises(nodes.FlowAgentError, match="Recovery manifest:"):
+        nodes.FlowCharacterCreator().generate_dataset(
+            reference_image=torch.zeros((1, 4, 4, 3)),
+            subject_description="A blue-haired singer",
+            shot_preset="all 22",
+            shot_count=2,
+            model="gem_pix_2",
+            seed=43,
+            retry_count=0,
+            continue_on_error=True,
+            timeout_per_image=600,
+            preview_columns=2,
+            dataset_name="Failed Character",
+        )
+
+    progress_files = list((tmp_path / "characters").glob("*/manifest.partial.json"))
+    assert len(progress_files) == 1
+    progress = json.loads(progress_files[0].read_text(encoding="utf-8"))
+    assert progress["state"] == "failed"
+    assert progress["completed_shots"] == 2
+    assert progress["successful_shots"] == 0
+    assert progress["failed_shots"] == 2
 
 
 def test_character_creator_labels_outfit_references_and_respects_aspect(monkeypatch, tmp_path):

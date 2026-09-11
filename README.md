@@ -6,6 +6,14 @@ ComfyUI nodes for using Google Flow from either ComfyUI on the same Windows PC o
 
 API contracts were verified against `kodelyx/flow-agent` revision `206285a47d15018765df5b16bce1d72198b1bb29` (Flow Agent 2.0.7).
 
+## September 2026 Flow transport migration
+
+Google Flow no longer exposes the old `aisandbox-pa.googleapis.com` Bearer-token generation path in the current web frontend. This repository now installs a compatibility layer for Flow's `flow.google.com/_/AiSandboxAngularFrontend/data/batchexecute` transport. Requests execute inside the signed-in Flow tab, using that page's session, per-page values, and a fresh reCAPTCHA token.
+
+Consequently, `05-STATUS-FLOW.cmd` may correctly show `has_flow_key: False`. The installation is ready when `extension_connected` is `True` and `flow_transport` is `batchexecute`. The extension displays **Flow page session** and **Refresh Session** instead of requiring the obsolete Bearer token.
+
+The migrated transport currently supports image generation, image references, image upload, media download, and standard start-image-to-video. It rejects text-to-video, first/last-frame video, reference/ingredients video, source-video editing, and video upscaling with HTTP 422 **before a paid generation request is submitted**. Those modes remain visible for legacy compatibility but should not be used until their new RPC schemas are captured and tested.
+
 ## Included nodes
 
 | Node | Purpose |
@@ -22,7 +30,7 @@ API contracts were verified against `kodelyx/flow-agent` revision `206285a47d150
 
 Images support `harbor_seal`, `narwhal`, and `gem_pix_2`; 1:1, 16:9, 9:16, 4:3, and 3:4; `count` 1-20; and up to 10 references through `ref_media_ids`. Nano Banana and Character Creator use the stable seed `43`. `gem_pix_2` may create extra internal candidates, but this client strictly limits ComfyUI output to the requested `count`.
 
-Video supports text-to-video, start image, first/last frames, mixed image/video ingredients, and editing with one source video plus optional visual references. Ingredient inputs accept up to 10 combined media IDs. Durations are 4, 6, 8, or 10 seconds in landscape or portrait, with 1-4 outputs per generation request and one output per video-edit request. Base generation currently uses 720p; selecting 1080p generates at 720p and then runs Flow's free upsample. Google Flow's newer 360p option is temporarily hidden because its internal generation schema has not yet been captured; sending the upsampler-only `resolution` field to a generation endpoint is rejected. The current upstream schema accepts only one source video.
+The ComfyUI node surface includes text-to-video, start image, first/last frames, mixed image/video ingredients, and editing with one source video. On the current migrated Flow transport, only standard start-image-to-video has a verified RPC mapping; the other video modes fail safely before submission as described above.
 
 ## Version 1 end-user workflow
 
@@ -318,7 +326,7 @@ When an account reaches its limit, wait for Google to reset it or switch only to
 
    Keep the existing `SERVER_API_KEY`, ngrok configuration, ports, and other settings unchanged.
 
-7. Save `.env`, reload the Google Flow tab, and use **Refresh Token** in the Flow Agent extension if its token status does not update.
+7. Save `.env`, reload the Google Flow tab, and use **Refresh Session** in the Flow Agent extension if its page-session status does not update.
 8. Start the correct mode again:
 
    ```text
@@ -328,7 +336,7 @@ When an account reaches its limit, wait for Google to reset it or switch only to
 
 9. For RunPod, if the launcher produces a different ngrok URL, update `FLOW_AGENT_BASE_URL` and restart ComfyUI in RunPod. Changing the Google account/project does not require changing `FLOW_AGENT_API_KEY`.
 
-If requests still use the previous account, fully close the old Flow tabs, confirm the new account avatar, reload the extension, press **Refresh Token**, and restart the selected launcher.
+If requests still use the previous account, fully close the old Flow tabs, confirm the new account avatar, reload the extension, press **Refresh Session**, and restart the selected launcher.
 
 Both launchers share the same backend, project, status, and stop scripts. Switching modes updates `PUBLIC_BASE_URL` and safely restarts the managed backend when required. `05-STATUS-FLOW.cmd` reports the selected mode; `06-STOP-FLOW.cmd` works for either mode and closes an existing managed ngrok tunnel only when one is present.
 
@@ -377,9 +385,14 @@ python -m pytest -q
 
 Tests use simulated network responses and cover authentication, payload contracts, idempotency, polling, strict output limits, references, image conversion, and native video output.
 
+## Attribution
+
+The batchexecute codec and request mapping were adapted from the MIT-licensed [FlowKit project](https://github.com/crisng95/flowkit). See [Third-party notices](docs/THIRD-PARTY-NOTICES.md).
+
 ## Security
 
-- The Bearer token is sent only to the `FLOW_AGENT_BASE_URL` origin.
+- The new Flow session cookies and page token stay inside the signed-in Flow tab; the local or ngrok bridge transports commands and results, not Google cookies.
+- `SERVER_API_KEY` still protects this project's local/ngrok HTTP API and is unrelated to Google's removed Bearer token.
 - `/v1/upload` is not automatically retried because upstream does not define upload idempotency.
 - Upload and download limits are configurable.
 - Never store `FLOW_AGENT_API_KEY` in a workflow or Git.

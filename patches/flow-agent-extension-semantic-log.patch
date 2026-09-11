@@ -1,0 +1,119 @@
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -704,7 +704,9 @@ async function requestCaptchaFromTab(tabId, requestId, pageAction) {
+     const msg = error?.message || '';
+     const shouldInject =
+       msg.includes('Receiving end does not exist') ||
+-      msg.includes('Could not establish connection');
++      msg.includes('Could not establish connection') ||
++      msg.includes('message channel closed') ||
++      msg.includes('asynchronous response by returning true');
+     if (!shouldInject) throw error;
+ 
+     // Inject content script and retry
+@@ -759,6 +761,22 @@ async function handleSolveCaptcha(msg) {
+ const BATCH_CAPTCHA_SLOT = '__CAPTCHA__';
+ const MAX_BATCH_TEXT = 2000000;
+ 
++function batchRpcSemanticError(rpcid, text) {
++  try {
++    const entries = JSON.parse(text || '[]');
++    for (const entry of Array.isArray(entries) ? entries : []) {
++      if (!Array.isArray(entry) || entry[0] !== 'wrb.fr' || entry[1] !== rpcid) continue;
++      const payload = typeof entry[2] === 'string' ? JSON.parse(entry[2]) : entry[2];
++      // Successful Flow payloads begin with records. A top-level numeric code
++      // is an application error transported inside an otherwise successful 200.
++      if (Array.isArray(payload) && typeof payload[0] === 'number') {
++        return `${rpcid} failed: ${JSON.stringify(payload).slice(0, 500)}`;
++      }
++    }
++  } catch { /* the backend remains the authority for unfamiliar payloads */ }
++  return null;
++}
++
+ async function runBatchRpc(command) {
+   const tab = await getOrOpenFlowTab();
+   if (!tab) return { error: 'NO_FLOW_TAB' };
+@@ -773,7 +791,9 @@ async function runBatchRpc(command) {
+     freq = freq.split(BATCH_CAPTCHA_SLOT).join(solved.token);
+   }
+ 
+-  const [injected] = await chrome.scripting.executeScript({
++  let injected = null;
++  let injectionError = null;
++  try { [injected] = await chrome.scripting.executeScript({
+     target: { tabId: tab.id },
+     world: 'MAIN',
+     args: [command.id, command.rpcid, freq, MAX_BATCH_TEXT, command.match || null],
+@@ -848,23 +852,35 @@ async function runBatchRpc(command) {
+       return result;
+     },
+-  });
++  }); } catch (error) {
++    injectionError = error?.message || 'executeScript failed';
++  }
+   if (injected?.result) return injected.result;
+ 
+   // Recover the already completed response from the page. Never resubmit a
+-  // generation just because Brave omitted the first return value.
+-  await sleep(100);
+-  const [recovered] = await chrome.scripting.executeScript({
+-    target: { tabId: tab.id },
+-    world: 'MAIN',
+-    args: [command.id],
+-    func: (resultKey) => {
+-      const cache = globalThis.__FLOW_AGENT_BATCH_RESULTS || {};
+-      const result = cache[resultKey] || null;
+-      delete cache[resultKey];
+-      return result;
+-    },
+-  });
+-  return recovered?.result || {
+-    error: `NO_INJECTION_RESULT: rpc=${command.rpcid}, tab=${tab.id}`,
++  // request just because Brave closed the first extension message channel.
++  for (const waitMs of [100, 250, 500, 1000, 2000, 3000]) {
++    await sleep(waitMs);
++    try {
++      const [recovered] = await chrome.scripting.executeScript({
++        target: { tabId: tab.id },
++        world: 'MAIN',
++        args: [command.id],
++        func: (resultKey) => {
++          const cache = globalThis.__FLOW_AGENT_BATCH_RESULTS || {};
++          const result = cache[resultKey] || null;
++          if (result) delete cache[resultKey];
++          return result;
++        },
++      });
++      if (recovered?.result) return recovered.result;
++    } catch { /* retry while the Flow tab settles */ }
++  }
++  return {
++    error: `NO_INJECTION_RESULT: rpc=${command.rpcid}, tab=${tab.id}` +
++      (injectionError ? `, cause=${injectionError}` : ''),
+   };
+ }
+ 
+@@ -890,14 +906,18 @@ async function handleBatchRpc(msg) {
+   }
+   try {
+     const output = await runBatchRpc({ id, rpcid, freq, captchaAction, match });
+-    if (output.error) {
++    const semanticError = output.error || batchRpcSemanticError(rpcid, output.text);
++    if (semanticError) {
+       if (visible) {
+         metrics.failedCount++;
+-        metrics.lastError = output.error;
+-        updateRequestLog(id, { status: 'failed', error: output.error });
++        metrics.lastError = semanticError;
++        updateRequestLog(id, {
++          status: 'failed', error: semanticError, httpStatus: output.status,
++          responseSummary: (output.text || '').slice(0, 300),
++        });
+       }
+-      sendToAgent({ id, status: 502, error: output.error });
++      sendToAgent({ id, status: output.error ? 502 : 400, error: semanticError });
+     } else {
+       if (visible) {
+         metrics.successCount++;

@@ -1,0 +1,44 @@
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -294,6 +294,9 @@ async function captureTokenFromFlowTab() {
+       console.log('[Flow Agent] Flow tab not ready yet after open');
+       return;
+     }
++    await chrome.tabs.reload(tab.id);
++    await waitForTabComplete(tab.id);
++    await sleep(1000);
+     await chrome.scripting.executeScript({
+       target: { tabId: tab.id },
+       files: ['content.js'],
+@@ -399,14 +402,12 @@ async function connectToAgent() {
+         } else {
+           console.log('[Flow Agent] open_flow_tab: token missing/expired, opening tab');
+           const tabs = await chrome.tabs.query({
+-            url: ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'],
++            url: FLOW_TAB_URLS,
+           });
+           if (tabs.length) {
+             await chrome.tabs.reload(tabs[0].id);
+             console.log('[Flow Agent] Refreshed existing Flow tab');
+           } else {
+-            await chrome.tabs.create({ url: 'https://labs.google/fx/tools/flow', active: true });
++            await chrome.tabs.create({ url: FLOW_URL, active: true });
+             console.log('[Flow Agent] Opened new Flow tab');
+           }
+@@ -1095,14 +1096,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+ 
+   if (msg.type === 'OPEN_FLOW_TAB') {
+     chrome.tabs.query({
+-      url: ['https://labs.google/fx/tools/flow*', 'https://labs.google/fx/*/tools/flow*'],
++      url: FLOW_TAB_URLS,
+     }).then((tabs) => {
+       if (tabs.length) {
+         chrome.tabs.update(tabs[0].id, { active: true });
+         reply({ ok: true, tabId: tabs[0].id });
+       } else {
+-        chrome.tabs.create({ url: 'https://labs.google/fx/tools/flow' })
++        chrome.tabs.create({ url: FLOW_URL })
+           .then((tab) => reply({ ok: true, tabId: tab.id }))
+           .catch((e) => reply({ error: e.message }));
+       }

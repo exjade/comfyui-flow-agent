@@ -112,12 +112,60 @@ def test_health_contract_and_bearer_header():
     assert headers["ngrok-skip-browser-warning"] == "comfyui-flow-agent"
 
 
+def test_batch_transport_is_ready_without_removed_google_flow_key():
+    session = FakeSession(
+        [FakeResponse(payload={
+            "status": "healthy",
+            "extension_connected": True,
+            "has_flow_key": False,
+            "transport": "http",
+            "flow_transport": "batchexecute",
+        })]
+    )
+    client = FlowAgentClient(config(), session=session)
+
+    health = client.assert_ready()
+
+    assert health["flow_transport"] == "batchexecute"
+
+
+def test_legacy_transport_still_requires_google_flow_key():
+    session = FakeSession(
+        [FakeResponse(payload={
+            "status": "healthy",
+            "extension_connected": True,
+            "has_flow_key": False,
+            "transport": "http",
+            "flow_transport": "legacy_rest",
+        })]
+    )
+    client = FlowAgentClient(config(), session=session)
+
+    with pytest.raises(FlowAgentHTTPError, match="flow_transport='legacy_rest'"):
+        client.assert_ready()
+
+
 def test_upload_uses_real_json_field_and_reads_media_id():
     session = FakeSession([FakeResponse(payload={"media_id": "uploaded-123", "url": "https://x/download/a.png"})])
     client = FlowAgentClient(config(), session=session)
     result = client.upload_image("data:image/png;base64,AAAA", timeout_seconds=30)
     assert result == "uploaded-123"
     assert session.calls[0][2]["json"] == {"image_base64": "data:image/png;base64,AAAA"}
+
+
+def test_media_history_uses_authenticated_flow_agent_endpoint():
+    session = FakeSession(
+        [FakeResponse(payload={"history": [{"type": "video", "media_id": "v1"}]})]
+    )
+    client = FlowAgentClient(config(), session=session)
+
+    result = client.list_media_history(timeout_seconds=15)
+
+    assert result["history"][0]["media_id"] == "v1"
+    method, url, kwargs = session.calls[0]
+    assert method == "GET"
+    assert url == "https://unit-test.ngrok-free.app/v1/history"
+    assert kwargs["headers"]["Authorization"] == "Bearer top-secret"
 
 
 def test_generation_payload_matches_repo_contract():

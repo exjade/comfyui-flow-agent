@@ -1,0 +1,11 @@
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -163,8 +163,6 @@ let _openingFlowTab = false;
+ // Keep it available in the background so user tabs are never redirected.
+ const FLOW_TAB_URLS = [
+   'https://flow.google.com/*',
+-  'https://labs.google/fx/tools/flow*',
+-  'https://labs.google/fx/*/tools/flow*',
+ ];
+ const FLOW_URL = 'https://flow.google.com/';

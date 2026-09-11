@@ -32,6 +32,24 @@ EXTENSION_FLOW_DOMAIN_PATCH = (
 EXTENSION_MEDIA_LIBRARY_PATCH = (
     ROOT / "patches" / "flow-agent-extension-media-library.patch"
 ).read_text(encoding="utf-8")
+EXTENSION_TOKEN_REFRESH_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-token-refresh.patch"
+).read_text(encoding="utf-8")
+EXTENSION_CURRENT_PROJECT_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-current-project.patch"
+).read_text(encoding="utf-8")
+EXTENSION_TOKEN_CAPTURE_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-token-capture.patch"
+).read_text(encoding="utf-8")
+EXTENSION_PAGE_TOKEN_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-page-token.patch"
+).read_text(encoding="utf-8")
+BATCHEXECUTE_PATCH = (
+    ROOT / "patches" / "flow-agent-batchexecute-migration.patch"
+).read_text(encoding="utf-8")
+SEMANTIC_LOG_PATCH = (
+    ROOT / "patches" / "flow-agent-extension-semantic-log.patch"
+).read_text(encoding="utf-8")
 RUNPOD_INSTALLER = (ROOT / "scripts" / "internal" / "install-runpod.sh").read_text(
     encoding="utf-8"
 )
@@ -204,9 +222,59 @@ def test_extension_patch_supports_current_flow_domain_and_valid_retry_tab():
     assert "return retryTabs[0];" in EXTENSION_FLOW_DOMAIN_PATCH
     assert "Apply-ExtensionPatch" in SETUP
     assert "Apply-ExtensionMediaLibraryPatch" in SETUP
+    assert "await chrome.tabs.reload(tab.id);" in EXTENSION_TOKEN_REFRESH_PATCH
+    assert "url: FLOW_TAB_URLS," in EXTENSION_TOKEN_REFRESH_PATCH
+    assert "chrome.tabs.create({ url: FLOW_URL, active: true });" in EXTENSION_TOKEN_REFRESH_PATCH
+    assert "Apply-ExtensionTokenRefreshPatch" in SETUP
+    assert "flow-agent-extension-token-refresh.patch" in START
+    assert "'https://labs.google/fx/tools/flow*'" in EXTENSION_CURRENT_PROJECT_PATCH
+    assert "Apply-ExtensionCurrentProjectPatch" in SETUP
+    assert "flow-agent-extension-current-project.patch" in START
+    assert '$ProjectUrl = "https://flow.google.com/project/$ProjectId"' in START
+    assert "if (!/^Bearer\\s+\\S+/i.test(value)) return;" in EXTENSION_TOKEN_CAPTURE_PATCH
+    assert "Reusing existing Flow tab" in EXTENSION_TOKEN_CAPTURE_PATCH
+    assert "Apply-ExtensionTokenCapturePatch" in SETUP
+    assert "flow-agent-extension-token-capture.patch" in START
+    assert "new CustomEvent('FLOW_AUTH_TOKEN'" in EXTENSION_PAGE_TOKEN_PATCH
+    assert "window.addEventListener('FLOW_AUTH_TOKEN'" in EXTENSION_PAGE_TOKEN_PATCH
+    assert "msg.type === 'FLOW_AUTH_TOKEN'" in EXTENSION_PAGE_TOKEN_PATCH
+    assert "No authenticated Flow request was observed" in EXTENSION_PAGE_TOKEN_PATCH
+    assert "Apply-ExtensionPageTokenPatch" in SETUP
+    assert "flow-agent-extension-page-token.patch" in START
     assert "flow-agent-extension-flow-domain.patch" in START
     assert 'Join-Path $FlowAgentRepositoryDir "flow-extension\\manifest.json"' in START
     assert 'Join-Path $FlowAgentRepositoryDir "flow-extension\\background.js"' in START
+
+
+def test_setup_installs_batchexecute_migration_after_legacy_fixes():
+    assert "flow-agent-batchexecute-migration.patch" in SETUP
+    assert "Apply-BatchMigrationPatch" in SETUP
+    assert "Flow Agent batchexecute migration" in SETUP
+    assert "USE_BATCH_RPC = \"1\"" in SETUP
+    assert "async function handleBatchRpc" in BATCHEXECUTE_PATCH
+    assert 'RPC_GEN_IMAGE = "ogiZ0b"' in BATCHEXECUTE_PATCH
+    assert 'RPC_GEN_VIDEO_I2V = "eb1hJf"' in BATCHEXECUTE_PATCH
+    assert "const MAX_BATCH_TEXT = 2000000" in BATCHEXECUTE_PATCH
+    assert "__FLOW_AGENT_BATCH_RESULTS" in BATCHEXECUTE_PATCH
+    assert "Never resubmit a" in BATCHEXECUTE_PATCH
+    assert "returned Google batch error code" in BATCHEXECUTE_PATCH
+    assert "function batchRpcSemanticError" in SEMANTIC_LOG_PATCH
+    assert "typeof payload[0] === 'number'" in SEMANTIC_LOG_PATCH
+    assert "msg.includes('message channel closed')" in SEMANTIC_LOG_PATCH
+    assert "for (const waitMs of [100, 250, 500, 1000, 2000, 3000])" in SEMANTIC_LOG_PATCH
+    assert "status: output.error ? 502 : 400" in SEMANTIC_LOG_PATCH
+    assert "Apply-ExtensionSemanticLogPatch" in SETUP
+    assert "flow-agent-extension-semantic-log.patch" in START
+    assert "semantic request-log fix is not installed" in START
+
+
+def test_start_accepts_connected_batch_session_without_legacy_flow_key():
+    assert '$Health.flow_transport -eq "batchexecute"' in START
+    assert '($UsesBatchTransport -or $Health.has_flow_key -eq $true)' in START
+    assert "Flow Agent batchexecute migration is not installed" in START
+    assert "refresh the page session" in START
+    assert "flow_transport" in STATUS
+    assert "has_flow_key=False is normal" in STATUS
 
 
 def test_runpod_installer_discovers_comfyui_and_its_python_without_fixed_path():

@@ -1,0 +1,121 @@
+diff --git a/flow-extension/injected.js b/flow-extension/injected.js
+--- a/flow-extension/injected.js
++++ b/flow-extension/injected.js
+@@ -15,22 +15,42 @@ const _originalFetch = window.fetch;
+ window.fetch = async function (...args) {
++  try {
++    const request = args[0];
++    const init = args[1] || {};
++    const value = new Headers(init.headers || request?.headers || {}).get('authorization') || '';
++    if (/^Bearer\s+\S+/i.test(value)) {
++      window.dispatchEvent(new CustomEvent('FLOW_AUTH_TOKEN', {
++        detail: { token: value.replace(/^Bearer\s+/i, '').trim() },
++      }));
++    }
++  } catch {}
+   const response = await _originalFetch.apply(this, args);
+   try {
+     const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+     // Only intercept TRPC calls on labs.google that return project/flow data
+     if (url.includes('/fx/api/trpc/') && response.ok) {
+       const clone = response.clone();
+       clone.text().then(text => {
+         if (text.includes('storage.googleapis.com/ai-sandbox-videofx/') || text.includes('flow-content.google/')) {
+           window.dispatchEvent(new CustomEvent('TRPC_MEDIA_URLS', {
+             detail: { url, body: text },
+           }));
+         }
+       }).catch(() => {});
+     }
+   } catch {}
+   return response;
+ };
++
++const _originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
++XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
++  if (String(name).toLowerCase() === 'authorization' && /^Bearer\s+\S+/i.test(String(value))) {
++    window.dispatchEvent(new CustomEvent('FLOW_AUTH_TOKEN', {
++      detail: { token: String(value).replace(/^Bearer\s+/i, '').trim() },
++    }));
++  }
++  return _originalSetRequestHeader.call(this, name, value);
++};
+ 
+ 
+ window.addEventListener('GET_CAPTCHA', async ({ detail }) => {
+diff --git a/flow-extension/content.js b/flow-extension/content.js
+--- a/flow-extension/content.js
++++ b/flow-extension/content.js
+@@ -14,6 +14,15 @@ if (!globalThis.__FLOW_AGENT_CONTENT_LOADED__) {
+   (document.head || document.documentElement).appendChild(s);
+ })();
+ 
++window.addEventListener('FLOW_AUTH_TOKEN', (event) => {
++  const token = String(event.detail?.token || '').trim();
++  if (!token) return;
++  chrome.runtime.sendMessage({
++    type: 'FLOW_AUTH_TOKEN',
++    flowKey: token,
++  }).catch(() => {});
++});
++
+ chrome.runtime.onMessage.addListener((msg, _, reply) => {
+diff --git a/flow-extension/background.js b/flow-extension/background.js
+--- a/flow-extension/background.js
++++ b/flow-extension/background.js
+@@ -297,12 +297,15 @@ async function captureTokenFromFlowTab() {
+     await chrome.tabs.reload(tab.id);
+     await waitForTabComplete(tab.id);
+     await sleep(1000);
+     await chrome.scripting.executeScript({
+       target: { tabId: tab.id },
+       files: ['content.js'],
+     });
+     console.log('[Flow Agent] Token refresh triggered on Flow tab');
++    await sleep(1500);
++    return !!flowKey;
+   } catch (e) {
+     console.error('[Flow Agent] Token refresh failed:', e);
++    return false;
+   } finally {
+     _openingFlowTab = false;
+   }
+@@ -1078,6 +1081,27 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+     return true;
+   }
+ 
++  if (msg.type === 'FLOW_AUTH_TOKEN') {
++    const senderUrl = sender.tab?.url || '';
++    if (!isFlowUrl(senderUrl)) {
++      reply({ error: 'INVALID_TOKEN_SOURCE' });
++      return true;
++    }
++    const token = String(msg.flowKey || '').trim();
++    if (!token) {
++      reply({ error: 'EMPTY_FLOW_TOKEN' });
++      return true;
++    }
++    flowKey = token;
++    metrics.tokenCapturedAt = Date.now();
++    chrome.storage.local.set({ flowKey, metrics }).then(() => {
++      sendToAgent({ type: 'token_captured', flowKey, clientId: extensionClientId });
++      console.log('[Flow Agent] Bearer token captured from Flow page');
++      broadcastStatus();
++      reply({ ok: true });
++    }).catch((error) => reply({ error: error.message }));
++    return true;
++  }
++
+   if (msg.type === 'CLEAR_REQUEST_LOG') {
+@@ -1114,7 +1138,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+ 
+   if (msg.type === 'REFRESH_TOKEN') {
+     captureTokenFromFlowTab()
+-      .then(() => reply({ ok: true }))
++      .then((captured) => reply(captured
++        ? { ok: true }
++        : { error: 'No authenticated Flow request was observed after refreshing the page.' }
++      ))
+       .catch((e) => reply({ error: e.message }));
+     return true;
+   }
